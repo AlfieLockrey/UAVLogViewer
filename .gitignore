@@ -5,6 +5,7 @@ runtime-config.js
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+dev-server*.log
 /test/unit/coverage/
 /test/e2e/reports/
 selenium-debug.log

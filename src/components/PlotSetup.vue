@@ -42,6 +42,14 @@
         <button v-if="state.expressions.length > 0" class="save-preset" v-b-modal.modal-prevent-closing>
           <i class="fa fa-check-circle" aria-hidden="true"></i>Save Preset
         </button>
+        <button v-if="state.expressions.length > 0" class="save-preset" @click="exportPreset">
+          <i class="fa fa-download" aria-hidden="true"></i>Export Preset
+        </button>
+        <button class="save-preset" @click="$refs.presetFile.click()">
+          <i class="fa fa-upload" aria-hidden="true"></i>Import Preset
+        </button>
+        <input ref="presetFile" class="preset-file-input" type="file" accept="application/json,.json"
+          @change="importPreset">
         <button class="save-preset" v-if="state.expressions.length > 0" v-b-modal.modal-prevent-closing
           @click="$eventHub.$emit('clearPlot')">
           <i class="fa fa-ban" aria-hidden="true"></i>
@@ -63,6 +71,7 @@
 import { store } from './Globals.js'
 import debounce from 'v-debounce'
 import ExpressionEditor from './ExpressionEditor.vue'
+import { createPortablePreset, parsePortablePreset } from '../tools/presetFormat.js'
 
 export default {
     name: 'PlotSetup',
@@ -129,6 +138,38 @@ export default {
             )
             myStorage.setItem('savedFields', JSON.stringify(saved))
             this.$eventHub.$emit('presetsChanged')
+        },
+        exportPreset () {
+            const name = window.prompt('Preset file name', this.state.file || 'UAVLogViewer preset')
+            if (!name || !name.trim()) return
+            const preset = createPortablePreset(name.trim(), this.state.expressions)
+            const blob = new Blob([JSON.stringify(preset, null, 2) + '\n'], { type: 'application/json' })
+            const link = document.createElement('a')
+            link.href = URL.createObjectURL(blob)
+            link.download = `${name.trim().replace(/[\\/:*?"<>|]/g, '_')}.uavlog-preset.json`
+            document.body.appendChild(link)
+            link.click()
+            link.remove()
+            URL.revokeObjectURL(link.href)
+        },
+        importPreset (event) {
+            const file = event.target.files[0]
+            event.target.value = ''
+            if (!file) return
+            const reader = new FileReader()
+            reader.onload = () => {
+                try {
+                    const preset = parsePortablePreset(reader.result)
+                    const saved = JSON.parse(window.localStorage.getItem('savedFields')) || {}
+                    saved[preset.name] = preset.fields
+                    window.localStorage.setItem('savedFields', JSON.stringify(saved))
+                    this.$eventHub.$emit('presetsChanged')
+                    window.alert(`Imported preset: ${preset.name}`)
+                } catch (error) {
+                    window.alert(`Could not import preset: ${error.message}`)
+                }
+            }
+            reader.readAsText(file)
         },
 
         resetModal () {
@@ -249,6 +290,10 @@ select option:hover {
   flex-flow: row wrap;
   justify-content: space-evenly;
   margin: 10px;
+}
+
+.preset-file-input {
+  display: none;
 }
 
 /* SAVE PRESET BUTTON */

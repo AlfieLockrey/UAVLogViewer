@@ -43,6 +43,22 @@ npm run e2e
 npm test
 ```
 
+### Local/offline Windows use
+
+Use a Node.js 20 LTS toolchain for this older Webpack 5 / Jest 24 project. From
+PowerShell, install dependencies and start the local server:
+
+```powershell
+npm ci
+npm run dev
+```
+
+Open the localhost address printed by Webpack, then select a DataFlash `.BIN` file from
+the local file picker. The log is parsed in the browser and is not uploaded by the viewer.
+
+Portable graph presets are available from **Plot Setup**. See
+[docs/portable-presets.md](docs/portable-presets.md) for the versioned exchange format.
+
 ## deployment of static files to a server
 To build a static version of the application and deploy it to a server, you can use the following commands. Make sure to replace `<your token>` with your actual Cesium ion token. The built files will be located in the `dist` directory, which you can then upload to your server.
 ``` bash
