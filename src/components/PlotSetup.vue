@@ -13,7 +13,8 @@
         <template v-if="state.expressions.length">
           <template v-for="(field, index) in state.expressions">
             <li class="field plotsetup" :key="'field' + index">
-              <expression-editor v-model.lazy="field.name" v-debounce="1000" :suggestions="completionOptions" />
+              <expression-editor class="expression-editor" v-model.lazy="field.name" v-debounce="1000"
+                :suggestions="completionOptions" />
               <input v-model.lazy="field.axisLabel" class="axis-label" type="text" placeholder="Axis label">
               <select v-model.number="field.axis">
                 <option v-for="axis in state.allAxis" :key="'axisnumber' + axis" :value="axis">{{ axis }}</option>
@@ -29,11 +30,11 @@
                 <option :value="0.5">50%</option>
                 <option :value="0.25">25%</option>
               </select>
-              <select v-model="field.lineStyle" title="Line style">
-                <option value="solid">Solid</option>
-                <option value="dash">Dashed</option>
-                <option value="dot">Dotted</option>
-                <option value="dashdot">Dash dot</option>
+              <select v-model="field.lineStyle" class="line-style" title="Line style">
+                <option value="solid">S</option>
+                <option value="dash">--</option>
+                <option value="dot">..</option>
+                <option value="dashdot">.-</option>
               </select>
               <input class="trace-visible" :checked="field.visible !== false" type="checkbox"
                 title="Show this trace on the plot" @change="field.visible = $event.target.checked">
@@ -86,10 +87,12 @@
         <div class="axis-limits">
           <div v-for="axis in state.allAxis" :key="'axis-limit-' + axis" class="axis-limit-row">
             <label>Axis {{ axis }}</label>
-            <input v-model.number="axisLimits[axis].min" type="number" step="any" placeholder="Min"
-              @change="setAxisLimits(axis)">
-            <input v-model.number="axisLimits[axis].max" type="number" step="any" placeholder="Max"
-              @change="setAxisLimits(axis)">
+            <input :value="formatAxisLimit(axisLimits[axis].min)" type="number" step="any" placeholder="Min"
+              @change="setAxisLimit(axis, 'min', $event.target.value)">
+            <input :value="formatAxisLimit(axisLimits[axis].max)" type="number" step="any" placeholder="Max"
+              @change="setAxisLimit(axis, 'max', $event.target.value)">
+            <button class="axis-autoscale" type="button" :title="`Autoscale Axis ${axis}`"
+              @click="autoscaleAxis(axis)">Auto</button>
           </div>
         </div>
       </b-collapse>
@@ -230,6 +233,20 @@ export default {
             if (!Number.isFinite(limits.min) || !Number.isFinite(limits.max) || limits.min >= limits.max) return
             const ranges = { ...this.state.currentYAxisRanges }
             ranges[axis] = [limits.min, limits.max]
+            this.$eventHub.$emit('setPresetYAxisRanges', ranges)
+        },
+        formatAxisLimit (value) {
+            return Number.isFinite(value) ? value.toFixed(4) : ''
+        },
+        setAxisLimit (axis, bound, value) {
+            this.axisLimits[axis][bound] = value.trim() === '' ? null : Number(value)
+            this.setAxisLimits(axis)
+        },
+        autoscaleAxis (axis) {
+            const ranges = { ...this.state.currentYAxisRanges }
+            delete ranges[axis]
+            this.axisLimits[axis].min = null
+            this.axisLimits[axis].max = null
             this.$eventHub.$emit('setPresetYAxisRanges', ranges)
         },
         async chooseSharedPresetFolder () {
@@ -378,7 +395,11 @@ li.field {
 }
 
 li.plotsetup {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-left: 6px;
+  min-width: 0;
 }
 
 i {
@@ -403,8 +424,10 @@ i {
 }
 
 .axis-label {
-  width: 22%;
-  margin-left: 4px;
+  box-sizing: border-box;
+  flex: 0 1 18%;
+  min-width: 0;
+  margin-left: 0;
   border: 1px solid grey;
   border-radius: 20px;
   padding: 4.5px;
@@ -415,32 +438,67 @@ i {
   font-size: 13px;
 }
 
+.expression-editor {
+  /* 40% is a 20% reduction from the previous 50% row allocation. */
+  flex: 0 1 40%;
+  min-width: 0;
+}
+
+.line-style {
+  width: 32px;
+}
+
+.trace-visible {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
 .axis-label:focus {
   background-color: rgba(241, 248, 255, 0.966);
   outline: none;
 }
 
 .axis-limits {
-  padding: 4px 20px;
+  padding: 4px 8px;
 }
 
 .axis-limit-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 42px minmax(42px, 116px) minmax(42px, 116px) 38px;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   margin: 6px 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .axis-limit-row label {
   margin: 0;
-  width: 48px;
+  white-space: nowrap;
 }
 
 .axis-limit-row input {
-  width: 72px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   border: 1px solid rgb(156, 156, 156);
   border-radius: 5px;
   padding: 2px 4px;
+}
+
+.axis-autoscale {
+  padding: 2px;
+  font-size: 11px;
+  line-height: 18px;
+  border: 1px solid rgb(156, 156, 156);
+  border-radius: 5px;
+  background-color: white;
+  color: #555;
+}
+
+.axis-autoscale:hover {
+  border-color: #d47f00;
+  color: #222;
 }
 
 select {

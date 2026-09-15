@@ -178,9 +178,12 @@ export default {
             position: relative;
             color: black;
             display: inline-block;
+            width: 100%;
+            min-width: 0;
         }
         .code-input {
             width: 100%;
+            box-sizing: border-box;
             font-family: monospace;
             resize: none;
             display: inline-block;
