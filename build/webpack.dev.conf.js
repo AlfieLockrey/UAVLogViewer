@@ -48,7 +48,10 @@ const devWebpackConfig = merge(baseWebpackConfig, {
       ],
     },
     hot: true,
-    static: "./",
+    static: {
+      directory: path.resolve(__dirname, '..'),
+      watch: false
+    },
     compress: true,
     host: HOST || config.dev.host,
     port: PORT || config.dev.port,
@@ -57,7 +60,7 @@ const devWebpackConfig = merge(baseWebpackConfig, {
     proxy: config.dev.proxyTable,
   },
   plugins: [
-    new ESLintPlugin({fix: true}),
+    new ESLintPlugin(),
     new webpack.DefinePlugin({
       'process.env': require('../config/dev.env'),
       '_COMMIT_': JSON.stringify(gitRevisionPlugin.commithash()),

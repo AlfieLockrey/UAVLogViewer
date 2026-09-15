@@ -9,6 +9,8 @@ import * as d3 from 'd3'
 import { faWindowRestore } from '@fortawesome/free-solid-svg-icons'
 import Vue from 'vue'
 import { isNumber } from 'underscore'
+import { getAxisTitle, getTraceLabel } from '../tools/plotLabels.js'
+import { getElapsedOrigin, getPlotHoverTemplate, getPlotHoverValues, getPlotTimeAxis } from '../tools/plotTimeAxis.js'
 
 const Color = require('color')
 
@@ -204,6 +206,7 @@ export default {
         this.$eventHub.$on('addPlots', this.addPlots)
         this.$eventHub.$on('plot', this.plot)
         this.$eventHub.$on('clearPlot', this.clearPlot)
+        this.$eventHub.$on('setPresetYAxisRanges', this.setPresetYAxisRanges)
     },
     beforeDestroy () {
         this.$eventHub.$off('animation-changed')
@@ -211,13 +214,19 @@ export default {
         this.$eventHub.$off('addPlots')
         this.$eventHub.$off('hidePlot')
         this.$eventHub.$off('togglePlot')
+        this.$eventHub.$off('setPresetYAxisRanges')
         clearInterval(this.interval)
     },
     data () {
         return {
             gd: null,
             plotInstance: null,
-            state: store
+            state: store,
+            timeAxisContext: null,
+            waitingForMessages: false,
+            unavailableMessages: new Set(),
+            plotHandlersAttached: false,
+            loadingPresetYAxisRanges: false
         }
     },
     methods: {
@@ -247,6 +256,7 @@ export default {
                             console.log(newWindow.setPlotData)
                             newWindow.setPlotData(gd.data)
                             newWindow.setPlotOptions(gd.layout)
+                            newWindow.setPlotTimeAxis(this.timeAxisContext)
                             newWindow.setCssColors(this.state.cssColors)
                             newWindow.setFlightModeChanges(this.state.flightModeChanges)
                             console.log(this.$eventHub)
@@ -363,6 +373,7 @@ export default {
         },
         onRangeChanged (event) {
             this.addMaxMinMeanToTitles()
+            this.captureYAxisRanges()
             if (event !== undefined) {
                 // this.$router.push({query: query})
                 if (event['xaxis.range']) {
@@ -392,7 +403,6 @@ export default {
             }
         },
         addMaxMinMeanToTitles   () {
-            const average = arr => arr.reduce((p, c) => p + c, 0) / arr.length
             const gd = this.gd
             const xRange = gd.layout.xaxis.range
 
@@ -400,21 +410,26 @@ export default {
 
             gd.data.forEach(trace => {
                 const len = Math.min(trace.x.length, trace.y.length)
-                const xInside = []
-                const yInside = []
+                let count = 0
+                let sum = 0
+                let min = Infinity
+                let max = -Infinity
 
                 for (let i = 0; i < len; i++) {
                     const x = trace.x[i]
                     const y = trace.y[i]
 
-                    if (x > xRange[0] && x < xRange[1]) {
-                        xInside.push(x)
-                        yInside.push(y)
+                    if (x > xRange[0] && x < xRange[1] && Number.isFinite(y)) {
+                        count += 1
+                        sum += y
+                        min = Math.min(min, y)
+                        max = Math.max(max, y)
                     }
                 }
-                const extraData = ` | Min: ${Math.min(...yInside).toFixed(2)} \
-    Max: ${Math.max(...yInside).toFixed(2)} \
-    Mean: ${average(yInside).toFixed(2)}`
+                if (count === 0) return
+                const extraData = ` | Min: ${min.toFixed(2)} \
+    Max: ${max.toFixed(2)} \
+    Mean: ${(sum / count).toFixed(2)}`
 
                 if (trace.name.indexOf(extraData) === -1) {
                     trace.name = trace.name.split(' | ')[0] + extraData
@@ -463,9 +478,9 @@ export default {
                     return i
                 }
             }
-            return this.state.allColors[this.state.allColors.length - 1]
+            return this.state.allColors[this.state.expressions.length % this.state.allColors.length]
         },
-        createNewField (fieldname, axis, color) {
+        createNewField (fieldname, axis, color, functionValue, axisLabel, opacity, lineStyle, visible) {
             if (color === undefined) {
                 color = this.getFirstFreeColor()
             } else if (!isNaN(color)) {
@@ -477,51 +492,31 @@ export default {
             return {
                 name: fieldname,
                 color: color,
-                axis: axis
+                axis: axis,
+                function: functionValue,
+                axisLabel: typeof axisLabel === 'string' ? axisLabel : '',
+                opacity: typeof opacity === 'number' ? opacity : 1,
+                lineStyle: typeof lineStyle === 'string' ? lineStyle : 'solid',
+                visible: visible !== false
             }
         },
 
         addPlots (plots) {
             this.state.plotLoading = true
-            const requested = new Set()
-            const RE = /[A-Z][A-Z0-9_]+(\[[0-9]\])?\.[a-zA-Z0-9]+/g
-            const RE2 = /[A-Z][A-Z0-9_]+(\[[0-9]\])/g
-            for (const plot of plots) {
-                const expression = plot[0]
-                // ensure we have the data
-                let messages = expression.match(RE)
-                // not match ATT, GPS
-                messages = expression.match(RE2)
-                if (messages !== null) {
-                    for (const message of messages) {
-                        if (!(message in this.state.messages)) {
-                            if (requested.has(message)) {
-                                continue
-                            }
-                            console.log('missing message type: ' + message)
-                            requested.add(message)
-                        }
-                    }
-                }
-            }
-            if ([...requested].length > 0) {
-                console.log([...requested])
-                this.waitForMessages([...requested]).then(() => {
-                    this.addPlots(plots)
-                })
-                    .catch((e) => {
-                        alert(e)
-                        this.plot()
-                    })
-                return
-            }
             const newplots = []
             for (const plot of plots) {
                 const expression = plot[0]
                 const axis = plot[1]
                 const color = plot[2]
+                const functionValue = plot[3]
+                const axisLabel = plot[4]
+                const opacity = plot[5]
+                const lineStyle = plot[6]
+                const visible = plot[8]
                 if (!this.isPlotted(expression)) {
-                    newplots.push(this.createNewField(expression, axis, color))
+                    newplots.push(this.createNewField(
+                        expression, axis, color, functionValue, axisLabel, opacity, lineStyle, visible
+                    ))
                 }
             }
             this.state.expressions.push(...newplots)
@@ -542,6 +537,52 @@ export default {
                 this.state.expressions.pop()
             }
             this.state.expressions.lenght = 0
+            this.state.currentYAxisRanges = {}
+            this.setPresetYAxisRanges(null)
+        },
+        setPresetYAxisRanges (ranges, loadingPreset = false) {
+            this.state.pendingYAxisRanges = ranges
+            this.loadingPresetYAxisRanges = loadingPreset
+            this.state.currentYAxisRanges = ranges ? { ...ranges } : {}
+            if (this.plotInstance !== null) {
+                this.applyPresetYAxisRanges()
+                Plotly.relayout(this.gd, this.getYAxisLayout())
+            }
+        },
+        getYAxisLayout () {
+            return this.state.allAxis.reduce((layout, axis) => {
+                const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
+                layout[key] = plotOptions[key]
+                return layout
+            }, {})
+        },
+        captureYAxisRanges () {
+            const layout = this.gd && (this.gd._fullLayout || this.gd.layout)
+            if (!layout) return
+            const ranges = { ...this.state.currentYAxisRanges }
+            for (const axis of this.state.allAxis) {
+                if (!this.state.expressions.some(field => field.axis === axis) && !ranges[axis]) continue
+                const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
+                const range = layout[key] && layout[key].range
+                if (range && Number.isFinite(range[0]) && Number.isFinite(range[1])) {
+                    ranges[axis] = [range[0], range[1]]
+                }
+            }
+            this.state.currentYAxisRanges = ranges
+        },
+        applyPresetYAxisRanges (ranges = this.state.currentYAxisRanges) {
+            ranges = ranges || {}
+            for (const axis of this.state.allAxis) {
+                const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
+                const range = ranges[axis]
+                if (range && Number.isFinite(range[0]) && Number.isFinite(range[1]) && range[0] < range[1]) {
+                    plotOptions[key].range = range
+                    plotOptions[key].autorange = false
+                } else {
+                    delete plotOptions[key].range
+                    plotOptions[key].autorange = true
+                }
+            }
         },
         resetAxis (index) {
             // Resets the Y axis so that the next plot autoranges
@@ -598,17 +639,41 @@ export default {
             }
             return [start, end]
         },
-        getAxisTitle (fieldAxis) {
-            const names = []
-            for (const field of this.state.expressions) {
-                if (field.axis === fieldAxis) {
-                    names.push(field.name)
-                }
+        getTimeAxisContext (traces) {
+            const mode = this.state.plotTimeMode === 'world' && this.state.worldTimeAvailable ? 'world' : 'elapsed'
+            return {
+                mode,
+                elapsedOrigin: getElapsedOrigin(this.state.events, traces),
+                worldStart: this.state.metadata && this.state.metadata.startTime,
+                worldStartMs: this.state.worldTimeStartMs,
+                worldTimeZone: this.state.worldTimeZone
             }
-            return names.join(', ')
+        },
+        getTimeAxis (range, includeRangeSlider = true) {
+            if (!this.timeAxisContext) return {}
+            return getPlotTimeAxis(range, this.timeAxisContext, this.calculateXAxisDomain(), includeRangeSlider)
+        },
+        getDataRange (traces) {
+            let start = Infinity
+            let end = -Infinity
+            for (const trace of traces) {
+                if (!trace.x || trace.x.length === 0 ||
+                    !Number.isFinite(trace.x[0]) || !Number.isFinite(trace.x[trace.x.length - 1])) continue
+                start = Math.min(start, trace.x[0])
+                end = Math.max(end, trace.x[trace.x.length - 1])
+            }
+            return Number.isFinite(start) && Number.isFinite(end) ? [start, end] : null
+        },
+        updateChildTimeAxes () {
+            for (const child of this.state.childPlots) {
+                if (child && child.setPlotTimeAxis) child.setPlotTimeAxis(this.timeAxisContext)
+            }
+        },
+        getAxisTitle (fieldAxis) {
+            return getAxisTitle(this.state.expressions, fieldAxis)
         },
         findMessagesInExpression (expression) {
-            const RE = /(?<message>[A-Z][A-Z0-9_]+(\[[A-Za-z0-9_.]+\])?)(\.(?<field>[A-Za-z0-9_]+))?/g
+            const RE = /(?<message>[A-Z][A-Z0-9_]+(\[[A-Za-z0-9_.%]+\])?)(\.(?<field>[A-Za-z0-9_]+))?/g
             const match = []
             for (const m of expression.matchAll(RE)) {
                 match.push([m.groups.message, m.groups.field])
@@ -648,9 +713,9 @@ export default {
             // let RE = /(?<!\.)\b[A-Z][A-Z0-9_]+\b/g
             // let fields = expression.name.match(RE)
             for (const message of messages) {
-                if (!(message in this.state.messages) || this.state.messages[message].lenght === 0) {
+                if (!(message in this.state.messages) || this.state.messages[message].length === 0) {
                     if (!((message) in this.state.messages) ||
-                        this.state.messages[message].lenght === 0) {
+                        this.state.messages[message].length === 0) {
                         return false
                     }
                 }
@@ -716,12 +781,15 @@ export default {
             for (const time of x) {
                 const vals = []
                 for (const fieldIndex in timeIndexes) { // array of indexes, one for each field
-                    while (this.state.messages[messages[fieldIndex]].time_boot_ms[timeIndexes[fieldIndex]] < time) {
+                    const messageData = this.state.messages[messages[fieldIndex]]
+                    const lastIndex = messageData.time_boot_ms.length - 1
+                    while (timeIndexes[fieldIndex] < lastIndex &&
+                        messageData.time_boot_ms[timeIndexes[fieldIndex]] < time) {
                         timeIndexes[fieldIndex] += 1
                     }
                     const newobj = {}
-                    for (const key of Object.keys(this.state.messages[messages[fieldIndex]])) {
-                        newobj[key] = this.state.messages[messages[fieldIndex]][key][timeIndexes[fieldIndex]]
+                    for (const key of Object.keys(messageData)) {
+                        newobj[key] = messageData[key][timeIndexes[fieldIndex]]
                     }
                     vals.push(newobj)
                 }
@@ -781,43 +849,56 @@ export default {
             console.log('plot()')
             if (this.state.expressions.length === 0) {
                 console.log('no expressions to plot')
+                this.state.plotLoading = false
                 return
             }
+            this.state.plotLoading = true
             plotOptions.title = this.state.file
-            const _this = this
             const datasets = []
-            this.state.expressionErrors = []
-            const errors = []
-
-            for (const expression of this.state.expressions) {
-                const [canplot, error] = this.expressionCanBePlotted(expression, false)
-                if (!canplot) {
-                    errors.push(error)
-                    this.state.expressionErrors = errors
-                    return
+            for (const message of this.unavailableMessages) {
+                if (message in this.state.messages) this.unavailableMessages.delete(message)
+            }
+            for (const axis of this.state.allAxis) {
+                const axisName = axis > 0 ? `yaxis${axis + 1}` : 'yaxis'
+                plotOptions[axisName].title = ''
+            }
+            const entries = this.state.expressions.map((expression, index) => {
+                const [canPlot, error] = this.expressionCanBePlotted(expression, false)
+                const messages = this.findMessagesInExpression(expression.name).map(message => message[0])
+                const unavailable = messages.find(message => this.unavailableMessages.has(message))
+                return {
+                    expression,
+                    index,
+                    canPlot: canPlot && unavailable === undefined,
+                    error: unavailable === undefined ? error : `Could not load message: ${unavailable}`,
+                    messages
                 }
-                errors.push(null)
+            })
+            this.state.expressionErrors = entries.map(entry => entry.error)
+            const messages = [...new Set(entries.filter(entry => entry.canPlot).flatMap(entry => entry.messages))]
+            const missingMessages = messages.filter(message => !(message in this.state.messages) ||
+                this.state.messages[message].length === 0)
+            if (missingMessages.length > 0) {
+                if (this.waitingForMessages) return
+                this.waitingForMessages = true
+                this.waitForMessages(missingMessages).then(() => {
+                    this.waitingForMessages = false
+                    this.plot()
+                }).catch((error) => {
+                    this.waitingForMessages = false
+                    for (const message of missingMessages) this.unavailableMessages.add(message)
+                    console.error(error)
+                    this.plot()
+                })
+                return
             }
-
-            let messages = []
-            for (const expression of this.state.expressions) {
-                messages = [...messages, ...(this.findMessagesInExpression(expression.name).map(message => message[0]))]
-            }
-            if (!this.messagesAreAvailable(messages)) {
-                this.waitForMessages(messages).then(this.plot)
-                    .catch((e) => {
-                        alert(e)
-                        this.plot()
-                    })
-            }
-
-            for (const expression of this.state.expressions) {
-                let data = this.evaluateExpression(expression.name)
+            for (const entry of entries) {
+                if (!entry.canPlot) continue
+                const { expression, index } = entry
+                const data = this.evaluateExpression(expression.name)
                 if ('error' in data) {
-                    this.state.expressionErrors.push(data.error)
-                    data = { x: 0, y: 0 }
-                } else {
-                    this.state.expressionErrors.push(null)
+                    this.$set(this.state.expressionErrors, index, data.error)
+                    continue
                 }
                 console.log(data)
                 const mode = data.isSwissCheese ? 'lines+markers' : 'lines'
@@ -838,14 +919,18 @@ export default {
                 }
                 const marker = data.isSwissCheese ? crossMarker : regularMarker
                 datasets.push({
-                    name: expression.name,
+                    name: getTraceLabel(expression),
+                    meta: getTraceLabel(expression),
+                    hovertemplate: '',
                     // type: 'scattergl',
                     mode: mode,
                     x: data.x,
                     y: data.y,
                     yaxis: 'y' + (expression.axis + 1),
+                    opacity: expression.visible === false ? 0 : expression.opacity,
                     line: {
                         color: expression.color,
+                        dash: expression.lineStyle,
                         width: 1.5
                     },
                     marker: marker
@@ -866,20 +951,30 @@ export default {
                     } */
                 }
             }
+            this.timeAxisContext = this.getTimeAxisContext(datasets)
+            for (const trace of datasets) {
+                trace.customdata = getPlotHoverValues(trace.x, this.timeAxisContext)
+                trace.hovertemplate = getPlotHoverTemplate(this.timeAxisContext)
+            }
             let start = new Date()
             console.log('starting plotting itself...')
 
             const plotData = datasets
 
-            plotOptions.xaxis = {
-                rangeslider: {},
-                domain: this.calculateXAxisDomain(),
-                title: 'time_boot (ms)',
-                tickformat: ':04,2f'
-            }
+            if (!this.loadingPresetYAxisRanges) this.captureYAxisRanges()
+            this.applyPresetYAxisRanges(
+                this.loadingPresetYAxisRanges ? this.state.pendingYAxisRanges : this.state.currentYAxisRanges
+            )
+
+            const xRange = this.plotInstance !== null && this.gd && this.gd._fullLayout.xaxis.range
+                ? this.gd._fullLayout.xaxis.range
+                : this.getDataRange(datasets)
+            plotOptions.xaxis = this.getTimeAxis(xRange)
+            if (xRange !== null) plotOptions.xaxis.range = xRange
             if (this.plotInstance !== null) {
-                plotOptions.xaxis.range = this.gd._fullLayout.xaxis.range
-                Plotly.newPlot(this.gd, plotData, plotOptions, { scrollZoom: true, responsive: true })
+                this.plotInstance = Plotly.newPlot(
+                    this.gd, plotData, plotOptions, { scrollZoom: true, responsive: true }
+                )
             } else {
                 this.plotInstance = Plotly.newPlot(
                     this.gd,
@@ -894,20 +989,38 @@ export default {
                 )
             }
             console.log('plotting done in ' + (new Date() - start) + 'ms')
-            start = new Date()
-            this.gd.on('plotly_relayout', this.onRangeChanged)
-            this.gd.on('plotly_hover', function (data) {
-                const infotext = data.points.map(function (d) {
-                    return d.x
-                })
-                _this.$eventHub.$emit('hoveredTime', infotext[0])
+            Promise.resolve(this.plotInstance).then(() => {
+                // Plotly can perform a final autorange while completing newPlot.  Apply
+                // a loaded preset once more after that pass so its saved limits win.
+                if (this.loadingPresetYAxisRanges && this.state.pendingYAxisRanges &&
+                    Object.keys(this.state.pendingYAxisRanges).length) {
+                    this.applyPresetYAxisRanges(this.state.pendingYAxisRanges)
+                    return Plotly.relayout(this.gd, this.getYAxisLayout())
+                }
+                return null
+            }).then(() => {
+                this.captureYAxisRanges()
+                if (this.loadingPresetYAxisRanges) {
+                    this.loadingPresetYAxisRanges = false
+                    this.state.pendingYAxisRanges = null
+                }
             })
+            start = new Date()
+            if (!this.plotHandlersAttached) {
+                this.gd.on('plotly_relayout', this.onRangeChanged)
+                this.gd.on('plotly_hover', (data) => {
+                    this.$eventHub.$emit('hoveredTime', data.points[0].x)
+                })
+                this.plotHandlersAttached = true
+            }
+            this.addMaxMinMeanToTitles()
 
             this.addModeShapes()
             this.addEvents()
             this.addParamChanges()
 
             this.state.plotLoading = false
+            this.updateChildTimeAxes()
 
             const bglayer = document.getElementsByClassName('bglayer')[0]
             const rect = bglayer.childNodes[0]
@@ -1145,11 +1258,8 @@ export default {
             this.zoomInterval = setTimeout(() => {
                 Plotly.relayout(this.gd, {
                     xaxis: {
-                        title: 'Time since boot',
                         range: range,
-                        domain: this.calculateXAxisDomain(),
-                        rangeslider: {},
-                        tickformat: timeformat
+                        ...this.getTimeAxis(range)
                     }
                 })
             }, 500)
@@ -1160,6 +1270,13 @@ export default {
             handler () {
                 this.plot()
             }
+        },
+        'state.plotTimeMode' (mode) {
+            if (mode === 'world' && !this.state.worldTimeAvailable) {
+                this.state.plotTimeMode = 'elapsed'
+                return
+            }
+            this.plot()
         }
     }
 }

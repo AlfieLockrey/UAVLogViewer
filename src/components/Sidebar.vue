@@ -52,6 +52,11 @@
                           <input type="checkbox" v-model="state.showRadio">
                           <a class="check-font"> Radio Sticks </a>
                         </label>
+                        <label v-if="state.mapAvailable">
+                          <i class="fas fa-globe-americas circle"></i>
+                          <input type="checkbox" v-model="state.showMap" @change="reopenMap">
+                          <a class="check-font"> 3D View </a>
+                        </label>
                         <label>
                           <i class="fa fa-compass circle"></i>
                           <input type="checkbox" v-model="state.showMagfit">
@@ -114,6 +119,14 @@
                             {{ filename }}
                         </li>
                         </ul>
+                    </div>
+                    <div v-if="state.processDone" class="plot-time-options">
+                        <label><i class="fas fa-clock"></i> Plot time</label>
+                        <select class="cesium-button" v-model="state.plotTimeMode">
+                            <option value="elapsed">Elapsed time</option>
+                            <option value="world" :disabled="!state.worldTimeAvailable">World time</option>
+                        </select>
+                        <small v-if="!state.worldTimeAvailable">World time requires a GPS timestamp in the log.</small>
                     </div>
                     <div>
                         <label><i class="fas fa-gamepad"></i> Radio Mode</label>
@@ -192,6 +205,11 @@ export default {
         },
         downloadTrimmed () {
             this.$eventHub.$emit('trimFile')
+        },
+        reopenMap () {
+            if (this.state.showMap) {
+                this.state.mapError = null
+            }
         },
 
         createDownloadURL (data, fileName) {
@@ -520,11 +538,11 @@ a.centered-section {
 
     @media only screen and (min-width: 991px) and (max-width: 1439px) {
         .nav-side-menu {
-            max-width: 27% !important;
+            max-width: 42% !important;
         }
 
         .col-lg-10 {
-            max-width: 73% !important;
+            max-width: 58% !important;
         }
 
         main {
@@ -534,7 +552,7 @@ a.centered-section {
 
     @media only screen and (min-width: 1440px) and (max-width: 2000px) {
         .nav-side-menu {
-        max-width: 20% !important;
+        max-width: 35% !important;
         }
 
         main {
@@ -542,13 +560,13 @@ a.centered-section {
         }
 
         .col-lg-10 {
-            max-width: 80% !important;
+            max-width: 65% !important;
         }
     }
 
     @media only screen and (min-width: 2000px) {
         .nav-side-menu {
-            max-width: 15% !important;
+        max-width: 30% !important;
         }
 
         main {
@@ -556,7 +574,7 @@ a.centered-section {
         }
 
         .col-lg-10 {
-            max-width: 85% !important;
+            max-width: 70% !important;
         }
     }
 

@@ -135,6 +135,8 @@ export default {
         this.trajectory = null // GPS trajectory (in degrees)
         this.fences = [] // Geo-fence entities
         this.correctedTrajectory = [] // GPS trajectory (Cartographic array)
+        this.animationSubscription = null
+        this.inputHandler = null
 
         // Link time with plot updates
         this.$eventHub.$on('hoveredTime', this.showAttitude)
@@ -143,7 +145,13 @@ export default {
         this.state.mapError = null
     },
     beforeDestroy () {
-        this.$eventHub.$off('hoveredTime')
+        this.$eventHub.$off('hoveredTime', this.showAttitude)
+        if (this.animationSubscription) this.animationSubscription.dispose()
+        if (this.inputHandler && !this.inputHandler.isDestroyed()) this.inputHandler.destroy()
+        if (this.viewer && !this.viewer.isDestroyed()) {
+            this.viewer.destroy()
+        }
+        this.viewer = null
     },
     mounted () {
         // create eniro, statkart, and openseamap providers
@@ -176,7 +184,6 @@ export default {
                     this.trajectoryUpdateTimeout = null
                     this.viewer.scene.globe.enableLighting = true
                     this.viewer.scene.postRender.addEventListener(this.onFrameUpdate)
-                    this.viewer.scene.postRender.addEventListener(this.onFrameUpdate)
                     this.viewer.camera.moveEnd.addEventListener(this.updateScaleBar)
                     this.viewer.scene.morphComplete.addEventListener(
                         () => {
@@ -195,7 +202,7 @@ export default {
                         const longitude = cameraPosition.longitude * 180 / Math.PI
                         const latitude = cameraPosition.latitude * 180 / Math.PI
 
-                        const timezone = tzlookup(latitude, longitude)
+                        const timezone = this.state.worldTimeZone || tzlookup(latitude, longitude)
                         dateTime = dateTime.setZone(timezone)
                         // If you want to set a specific timezone
                         // dateTime = dateTime.setZone("America/Chicago");
@@ -204,6 +211,7 @@ export default {
                     }
                     // Attach hover handler
                     const handler = new ScreenSpaceEventHandler(this.viewer.scene.canvas)
+                    this.inputHandler = handler
                     handler.setInputAction(this.onMove, ScreenSpaceEventType.MOUSE_MOVE)
                     handler.setInputAction(this.onLeftDown, ScreenSpaceEventType.LEFT_DOWN)
                     handler.setInputAction(this.onClick, ScreenSpaceEventType.LEFT_CLICK)
@@ -211,7 +219,7 @@ export default {
                     // TODO: fix saving and sharing state
                     // this.viewer.camera.moveEnd.addEventListener(this.onCameraUpdate)
 
-                    knockout.getObservable(this.viewer.clockViewModel, 'shouldAnimate')
+                    this.animationSubscription = knockout.getObservable(this.viewer.clockViewModel, 'shouldAnimate')
                         .subscribe(this.onAnimationChange)
                     const layers = this.viewer.scene.imageryLayers
                     const xofs = 0.00001

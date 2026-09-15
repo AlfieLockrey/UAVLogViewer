@@ -8,10 +8,10 @@
 import Plotly from 'plotly.js'
 import { store } from './Globals.js'
 import * as d3 from 'd3'
+import { getPlotHoverTemplate, getPlotHoverValues, getPlotTimeAxis } from '../tools/plotTimeAxis.js'
 
 const Color = require('color')
 
-const timeformat = ':02,2f'
 let annotationsEvents = []
 const annotationsModes = []
 let annotationsParams = []
@@ -59,6 +59,16 @@ export default {
         window.plot = () => { this.plot() }
         window.setPlotData = (data) => { this.plotData = data }
         window.setPlotOptions = (options) => { this.plotOptions = options }
+        window.setPlotTimeAxis = (context) => {
+            this.timeAxisContext = context
+            for (const trace of this.plotData) {
+                trace.customdata = getPlotHoverValues(trace.x, context)
+                trace.hovertemplate = getPlotHoverTemplate(context)
+            }
+            if (this.gd && this.plotInstance !== null) {
+                Plotly.relayout(this.gd, { xaxis: { ...this.getTimeAxis(this.gd.layout.xaxis.range) } })
+            }
+        }
         window.setFlightModeChanges = (modes) => { this.flightModeChanges = modes }
         window.setCssColors = (colors) => { this.cssColors = colors }
         window.setTimeRange = (timeRange) => { this.setTimeRange(timeRange) }
@@ -95,12 +105,17 @@ export default {
             flightModeChanges: [],
             externalTimeRange: null,
             $eventHub: null,
-            cursor: null
+            cursor: null,
+            timeAxisContext: null
         }
     },
     methods: {
         setTimeRange (timeRange) {
             this.externalTimeRange = timeRange
+        },
+        getTimeAxis (range) {
+            if (!this.timeAxisContext) return {}
+            return getPlotTimeAxis(range, this.timeAxisContext, this.calculateXAxisDomain(), false)
         },
         csvButton () {
             return {
@@ -244,6 +259,10 @@ export default {
             console.log('plot()')
             const start = new Date()
             delete this.plotOptions.xaxis.rangeslider
+            this.plotOptions.xaxis = {
+                ...this.plotOptions.xaxis,
+                ...this.getTimeAxis(this.plotOptions.xaxis.range)
+            }
             if (this.plotInstance !== null) {
                 this.plotOptions.xaxis.range = this.gd._fullLayout.xaxis.range
                 Plotly.newPlot(this.gd, this.plotData, this.plotOptions, { scrollZoom: true, responsive: true })
@@ -529,10 +548,8 @@ export default {
             this.zoomInterval = setTimeout(() => {
                 Plotly.relayout(this.gd, {
                     xaxis: {
-                        title: 'Time since boot',
                         range: range,
-                        domain: this.calculateXAxisDomain(),
-                        tickformat: timeformat
+                        ...this.getTimeAxis(range)
                     }
                 })
             }, 500)

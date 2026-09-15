@@ -131,8 +131,8 @@
     "worker-loader": "^3.0.8"
   },
   "engines": {
-    "node": ">= 6.0.0",
-    "npm": ">= 3.0.0"
+    "node": ">=16 <21",
+    "npm": ">=8 <11"
   },
   "browserslist": [
     "> 1%",

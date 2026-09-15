@@ -13,7 +13,7 @@ RUN useradd -m -u 2000 nodeuser
 COPY package*.json ./
 
 # Install dependencies
-RUN npm install
+RUN npm ci
 
 # Bundle app source
 COPY . .

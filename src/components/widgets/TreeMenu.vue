@@ -22,13 +22,14 @@
                         class="type"
                         :key="cleanNodeName(nodeName)">
                         <a
-                            @click="openPreset(newNode.messages)"
+                            @click="openPreset(newNode.messages, name + nodeName)"
                             class="section"
                         >
                             {{nodeName}}
                         </a>
                         <!-- TODO: remove this hacky check when presets use a better data sctructure -->
-                        <a @click="deletePreset(name+nodeName)" v-if="newNode[Object.keys(newNode)[0]][0][3] === 1">
+                        <a @click="deletePreset(name+nodeName)"
+                            v-if="newNode[Object.keys(newNode)[0]][0][7] === 'local'">
                             <i class="remove-icon fas fa-trash" title="Delete preset"></i>
                         </a>
 
@@ -84,13 +85,18 @@ export default {
             myStorage.setItem('savedFields', JSON.stringify(saved))
             this.$eventHub.$emit('presetsChanged')
         },
-        openPreset (preset) {
+        openPreset (preset, presetName) {
             this.$eventHub.$emit('clearPlot')
+            const savedAxisRanges = JSON.parse(window.localStorage.getItem('savedAxisRanges')) || {}
+            const sharedAxisRanges = JSON.parse(window.localStorage.getItem('sharedAxisRanges')) || {}
+            const isShared = preset[0] && preset[0][7] === 'shared'
+            this.$eventHub.$emit('setPresetYAxisRanges',
+                (isShared ? sharedAxisRanges : savedAxisRanges)[presetName] || null, true)
             this.state.plotOn = true
             this.$nextTick(function () {
                 const msgs = []
                 for (const msg of preset) {
-                    msgs.push([msg[0], msg[1], msg[2]])
+                    msgs.push([msg[0], msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8]])
                 }
                 this.$eventHub.$emit('addPlots', msgs)
             })

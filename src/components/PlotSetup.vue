@@ -8,12 +8,13 @@
         </a>
       </div>
     </li>
-    <b-collapse id="plotsetupcontent" class="menu-content collapse out" visible>
+    <b-collapse id="plotsetupcontent" class="menu-content collapse out instant-collapse" visible>
       <ul class="colorpicker plot-wrapper">
         <template v-if="state.expressions.length">
           <template v-for="(field, index) in state.expressions">
             <li class="field plotsetup" :key="'field' + index">
               <expression-editor v-model.lazy="field.name" v-debounce="1000" :suggestions="completionOptions" />
+              <input v-model.lazy="field.axisLabel" class="axis-label" type="text" placeholder="Axis label">
               <select v-model.number="field.axis">
                 <option v-for="axis in state.allAxis" :key="'axisnumber' + axis" :value="axis">{{ axis }}</option>
               </select>
@@ -22,6 +23,20 @@
                   :style="{ color: color }">■
                 </option>
               </select>
+              <select v-model.number="field.opacity" :disabled="field.visible === false" title="Trace opacity">
+                <option :value="1">100%</option>
+                <option :value="0.75">75%</option>
+                <option :value="0.5">50%</option>
+                <option :value="0.25">25%</option>
+              </select>
+              <select v-model="field.lineStyle" title="Line style">
+                <option value="solid">Solid</option>
+                <option value="dash">Dashed</option>
+                <option value="dot">Dotted</option>
+                <option value="dashdot">Dash dot</option>
+              </select>
+              <input class="trace-visible" :checked="field.visible !== false" type="checkbox"
+                title="Show this trace on the plot" @change="field.visible = $event.target.checked">
               <a class="remove-button" @click="$eventHub.$emit('togglePlot', field.name)">
                 <i class="expand fas fa-trash" title="Remove data"></i>
               </a>
@@ -48,6 +63,9 @@
         <button class="save-preset" @click="$refs.presetFile.click()">
           <i class="fa fa-upload" aria-hidden="true"></i>Import Preset
         </button>
+        <button v-if="sharedPresetSupported" class="save-preset" @click="chooseSharedPresetFolder">
+          <i class="fa fa-folder-open" aria-hidden="true"></i>Preset Folder
+        </button>
         <input ref="presetFile" class="preset-file-input" type="file" accept="application/json,.json"
           @change="importPreset">
         <button class="save-preset" v-if="state.expressions.length > 0" v-b-modal.modal-prevent-closing
@@ -56,6 +74,25 @@
           clear
         </button>
       </div>
+      <small v-if="sharedPresetFolderName" class="shared-preset-folder">
+        Shared presets: {{ sharedPresetFolderName }}
+      </small>
+      <li class="type axis-limits-toggle">
+        <div v-b-toggle.axislimitscontent>
+          <a class="section">Axis limits <i class="expand fas fa-caret-down"></i></a>
+        </div>
+      </li>
+      <b-collapse id="axislimitscontent" class="menu-content collapse out instant-collapse">
+        <div class="axis-limits">
+          <div v-for="axis in state.allAxis" :key="'axis-limit-' + axis" class="axis-limit-row">
+            <label>Axis {{ axis }}</label>
+            <input v-model.number="axisLimits[axis].min" type="number" step="any" placeholder="Min"
+              @change="setAxisLimits(axis)">
+            <input v-model.number="axisLimits[axis].max" type="number" step="any" placeholder="Max"
+              @change="setAxisLimits(axis)">
+          </div>
+        </div>
+      </b-collapse>
     </b-collapse>
     <!-- MODAL -->
     <b-modal id="modal-prevent-closing" ref="modal" @show="resetModal" @hidden="resetModal" @ok="handleOk">
@@ -72,6 +109,9 @@ import { store } from './Globals.js'
 import debounce from 'v-debounce'
 import ExpressionEditor from './ExpressionEditor.vue'
 import { createPortablePreset, parsePortablePreset } from '../tools/presetFormat.js'
+import {
+    loadSharedPresets, saveSharedPreset, selectSharedPresetDirectory, supportsSharedPresets
+} from '../tools/sharedPresets.js'
 
 export default {
     name: 'PlotSetup',
@@ -84,8 +124,41 @@ export default {
     data () {
         return {
             state: store,
-            name: ''
+            name: '',
+            sharedPresetDirectory: null,
+            sharedPresetFolderName: '',
+            sharedPresetSupported: supportsSharedPresets(),
+            axisLimits: {
+                0: {
+                    min: null,
+                    max: null
+                },
+                1: {
+                    min: null,
+                    max: null
+                },
+                2: {
+                    min: null,
+                    max: null
+                },
+                3: {
+                    min: null,
+                    max: null
+                },
+                4: {
+                    min: null,
+                    max: null
+                },
+                5: {
+                    min: null,
+                    max: null
+                }
+            }
         }
+    },
+    mounted () {
+        this.refreshSharedPresets()
+        this.refreshAxisLimits()
     },
     computed: {
         additionalCompletionItems () {
@@ -115,7 +188,11 @@ export default {
                 this.state.expressions.push({
                     name: '1+1',
                     color: this.getFirstFreeColor(),
-                    axis: this.getFirstFreeAxis()
+                    axis: this.getFirstFreeAxis(),
+                    axisLabel: '',
+                    opacity: 1,
+                    lineStyle: 'solid',
+                    visible: true
                 })
             })
         },
@@ -128,21 +205,78 @@ export default {
         getFirstFreeColor () {
             return this.state.allColors.find(color =>
                 !this.state.expressions.some(field => field.color === color)
-            ) || this.state.allColors[this.state.allColors.length - 1]
+            ) || this.state.allColors[this.state.expressions.length % this.state.allColors.length]
         },
-        savePreset (name) {
+        async refreshSharedPresets () {
+            if (!this.sharedPresetSupported) return
+            try {
+                const shared = await loadSharedPresets()
+                this.sharedPresetDirectory = shared.directory
+                this.sharedPresetFolderName = shared.permission ? shared.directory.name : ''
+                this.$eventHub.$emit('sharedPresetsChanged', shared.presets, shared.yAxisRanges)
+            } catch (error) {
+                console.warn('Unable to load shared presets:', error)
+            }
+        },
+        refreshAxisLimits () {
+            for (const axis of this.state.allAxis) {
+                const limits = this.state.currentYAxisRanges[axis]
+                this.axisLimits[axis].min = limits ? limits[0] : null
+                this.axisLimits[axis].max = limits ? limits[1] : null
+            }
+        },
+        setAxisLimits (axis) {
+            const limits = this.axisLimits[axis]
+            if (!Number.isFinite(limits.min) || !Number.isFinite(limits.max) || limits.min >= limits.max) return
+            const ranges = { ...this.state.currentYAxisRanges }
+            ranges[axis] = [limits.min, limits.max]
+            this.$eventHub.$emit('setPresetYAxisRanges', ranges)
+        },
+        async chooseSharedPresetFolder () {
+            try {
+                const directory = await selectSharedPresetDirectory()
+                this.sharedPresetDirectory = directory
+                this.sharedPresetFolderName = directory.name
+                await this.refreshSharedPresets()
+            } catch (error) {
+                if (error.name !== 'AbortError') window.alert(`Could not use preset folder: ${error.message}`)
+            }
+        },
+        async savePreset (name) {
             const myStorage = window.localStorage
             const saved = JSON.parse(myStorage.getItem('savedFields')) || {}
             saved[name] = this.state.expressions.map(field =>
-                [field.name, field.axis, field.color, field.function]
+                [field.name, field.axis, field.color, field.function, field.axisLabel || '',
+                    typeof field.opacity === 'number' ? field.opacity : 1, field.lineStyle || 'solid', 'local',
+                    field.visible !== false]
             )
             myStorage.setItem('savedFields', JSON.stringify(saved))
+            const savedAxisRanges = JSON.parse(myStorage.getItem('savedAxisRanges')) || {}
+            savedAxisRanges[name] = this.state.currentYAxisRanges
+            myStorage.setItem('savedAxisRanges', JSON.stringify(savedAxisRanges))
             this.$eventHub.$emit('presetsChanged')
+            if (this.sharedPresetDirectory) {
+                try {
+                    let result = await saveSharedPreset(
+                        this.sharedPresetDirectory, name, this.state.expressions, false, this.state.currentYAxisRanges
+                    )
+                    if (result.exists &&
+                        window.confirm(`"${name}" already exists in the shared preset folder. Overwrite it?`)) {
+                        result = await saveSharedPreset(
+                            this.sharedPresetDirectory, name, this.state.expressions, true,
+                            this.state.currentYAxisRanges
+                        )
+                    }
+                    if (!result.exists) await this.refreshSharedPresets()
+                } catch (error) {
+                    window.alert(`Saved locally, but could not save to the shared folder: ${error.message}`)
+                }
+            }
         },
         exportPreset () {
             const name = window.prompt('Preset file name', this.state.file || 'UAVLogViewer preset')
             if (!name || !name.trim()) return
-            const preset = createPortablePreset(name.trim(), this.state.expressions)
+            const preset = createPortablePreset(name.trim(), this.state.expressions, this.state.currentYAxisRanges)
             const blob = new Blob([JSON.stringify(preset, null, 2) + '\n'], { type: 'application/json' })
             const link = document.createElement('a')
             link.href = URL.createObjectURL(blob)
@@ -163,6 +297,9 @@ export default {
                     const saved = JSON.parse(window.localStorage.getItem('savedFields')) || {}
                     saved[preset.name] = preset.fields
                     window.localStorage.setItem('savedFields', JSON.stringify(saved))
+                    const savedAxisRanges = JSON.parse(window.localStorage.getItem('savedAxisRanges')) || {}
+                    savedAxisRanges[preset.name] = preset.yAxisRanges
+                    window.localStorage.setItem('savedAxisRanges', JSON.stringify(savedAxisRanges))
                     this.$eventHub.$emit('presetsChanged')
                     window.alert(`Imported preset: ${preset.name}`)
                 } catch (error) {
@@ -175,16 +312,24 @@ export default {
         resetModal () {
             this.name = ''
         },
-        handleOk (bvModalEvt) {
+        async handleOk (bvModalEvt) {
             // Prevent modal from closing
             bvModalEvt.preventDefault()
             if (this.name.length > 0) {
-                this.savePreset(this.name)
+                await this.savePreset(this.name)
 
                 // Hide the modal manually
                 this.$nextTick(() => {
                     this.$refs.modal.hide()
                 })
+            }
+        }
+    },
+    watch: {
+        'state.currentYAxisRanges': {
+            deep: true,
+            handler () {
+                this.refreshAxisLimits()
             }
         }
     }
@@ -196,6 +341,12 @@ export default {
   min-height: 160px;
   overflow: hidden;
   overflow-y: scroll;
+}
+
+/* Avoid repeatedly reflowing the sizeable Plot Setup form during Bootstrap's
+   height transition. */
+.instant-collapse.collapsing {
+  transition: none;
 }
 
 /* COLOR PICKER */
@@ -249,6 +400,47 @@ i {
 .plotname:focus {
   background-color: rgba(241, 248, 255, 0.966);
   outline: none;
+}
+
+.axis-label {
+  width: 22%;
+  margin-left: 4px;
+  border: 1px solid grey;
+  border-radius: 20px;
+  padding: 4.5px;
+  color: black;
+  font-family: monospace;
+  line-height: 15px;
+  margin-bottom: 0;
+  font-size: 13px;
+}
+
+.axis-label:focus {
+  background-color: rgba(241, 248, 255, 0.966);
+  outline: none;
+}
+
+.axis-limits {
+  padding: 4px 20px;
+}
+
+.axis-limit-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.axis-limit-row label {
+  margin: 0;
+  width: 48px;
+}
+
+.axis-limit-row input {
+  width: 72px;
+  border: 1px solid rgb(156, 156, 156);
+  border-radius: 5px;
+  padding: 2px 4px;
 }
 
 select {

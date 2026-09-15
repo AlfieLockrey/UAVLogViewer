@@ -77,6 +77,7 @@ import { DjiDataExtractor } from '../tools/djiDataExtractor'
 import MagFitTool from '@/components/widgets/MagFitTool.vue'
 import EkfHelperTool from '@/components/widgets/EkfHelperTool.vue'
 import Vue from 'vue'
+import tzlookup from 'tz-lookup'
 
 export default {
     name: 'Home',
@@ -86,6 +87,10 @@ export default {
         this.state.timeAttitude = []
         this.state.timeAttitudeQ = []
         this.state.currentTrajectory = []
+        this.state.metadata = null
+        this.state.worldTimeAvailable = false
+        this.state.worldTimeZone = ''
+        this.state.plotTimeMode = 'elapsed'
         isOnline().then(a => { this.state.isOnline = a })
     },
     beforeDestroy () {
@@ -197,6 +202,7 @@ export default {
                 console.log('unable to load metadata')
                 console.log(error)
             }
+            this.setWorldTimeContext()
             try {
                 this.state.namedFloats = this.dataExtractor.extractNamedValueFloatNames(this.state.messages)
                 console.log(this.state.namedFloats)
@@ -242,6 +248,19 @@ export default {
                 this.state.colors.push(new Color(rgba[0], rgba[1], rgba[2]))
                 // this.translucentColors.push(new Cesium.Color(rgba[0], rgba[1], rgba[2], 0.1))
             }
+        },
+        setWorldTimeContext () {
+            const trajectory = this.state.currentTrajectory
+            const startTime = this.state.metadata && this.state.metadata.startTime
+            if (!trajectory || trajectory.length === 0 || !(startTime instanceof Date) || isNaN(startTime)) {
+                this.state.worldTimeAvailable = false
+                this.state.plotTimeMode = 'elapsed'
+                return
+            }
+            const firstPoint = trajectory[0]
+            this.state.worldTimeStartMs = trajectory.reduce((min, point) => Math.min(min, point[3]), firstPoint[3])
+            this.state.worldTimeZone = tzlookup(firstPoint[1], firstPoint[0])
+            this.state.worldTimeAvailable = true
         }
     },
     components: {

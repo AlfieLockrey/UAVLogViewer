@@ -65,6 +65,7 @@
 <script>
 import { isArray } from 'underscore'
 import { store } from './Globals.js'
+import { loadSharedPresets } from '../tools/sharedPresets.js'
 import TreeMenu from './widgets/TreeMenu.vue'
 import fastXmlParser from 'fast-xml-parser'
 
@@ -93,70 +94,48 @@ export default {
                 'UNIT',
                 'MULT'
             ],
-            // TODO: lists are nor clear, use objects instead
-            messagePresets: {
-            },
             userPresets: {},
+            sharedPresets: {},
             messageDocs: {}
         }
     },
     created () {
         this.$eventHub.$on('messageTypes', this.handleMessageTypes)
         this.$eventHub.$on('presetsChanged', this.loadLocalPresets)
-        this.messagePresets = this.loadXmlPresets()
+        this.$eventHub.$on('sharedPresetsChanged', this.setSharedPresets)
         this.messageDocs = this.loadXmlDocs()
         this.loadLocalPresets()
+        this.loadSharedPresets()
     },
     beforeDestroy () {
         this.$eventHub.$off('messageTypes')
     },
     methods: {
-        loadXmlPresets () {
-            // eslint-disable-next-line
-            const graphs = {}
-            const files = [
-                require('../assets/mavgraphs.xml'),
-                require('../assets/mavgraphs2.xml'),
-                require('../assets/ekfGraphs.xml'),
-                require('../assets/ekf3Graphs.xml')
-            ]
-            for (const contents of files) {
-                const result = fastXmlParser.parse(contents.default, { ignoreAttributes: false })
-                const igraphs = result.graphs
-                for (const graph of igraphs.graph) {
-                    let i = ''
-                    const name = graph['@_name']
-                    if (!Array.isArray(graph.expression)) {
-                        graph.expression = [graph.expression]
-                    }
-                    for (const expression of graph.expression) {
-                        const fields = []
-                        for (let exp of expression.split(' ')) {
-                            if (exp.indexOf(':') >= 0) {
-                                exp = exp.replace(':2', '')
-                                fields.push([exp, 1])
-                            } else {
-                                fields.push([exp, 0])
-                            }
-                        }
-                        graphs[name + i] = fields
-                        // workaround to avoid replacing a key
-                        // TODO: implement this in a way that doesn't need this hack
-                        i += ' '
-                    }
-                }
-            }
-            return graphs
-        },
         loadLocalPresets () {
             const saved = window.localStorage.getItem('savedFields')
             if (saved !== null) {
                 this.userPresets = JSON.parse(saved)
                 for (const preset in this.userPresets) {
                     for (const message in this.userPresets[preset]) {
-                        // Field 3 means it is a user preset and can be deleted
-                        this.userPresets[preset][message][3] = 1
+                        this.userPresets[preset][message][7] = 'local'
                     }
+                }
+            }
+        },
+        async loadSharedPresets () {
+            try {
+                const shared = await loadSharedPresets()
+                this.setSharedPresets(shared.presets, shared.yAxisRanges)
+            } catch (error) {
+                console.warn('Unable to load shared presets:', error)
+            }
+        },
+        setSharedPresets (presets, yAxisRanges = {}) {
+            this.sharedPresets = presets
+            window.localStorage.setItem('sharedAxisRanges', JSON.stringify(yAxisRanges))
+            for (const preset in this.sharedPresets) {
+                for (const message in this.sharedPresets[preset]) {
+                    this.sharedPresets[preset][message][7] = 'shared'
                 }
             }
         },
@@ -277,7 +256,7 @@ export default {
             return fields
         },
         isAvailable (msg) {
-            const msgRe = /[A-Z][A-Z0-9_]+(\[[0-9]\])?(\.[a-zA-Z0-9_]+)?/g
+            const msgRe = /[A-Z][A-Z0-9_]+(\[[A-Za-z0-9_.%]+\])?(\.[a-zA-Z0-9_]+)?/g
             const match = msg[0].match(msgRe)
             if (!match) {
                 return true
@@ -324,41 +303,24 @@ export default {
         },
         availableMessagePresets () {
             const dict = {}
-            // do it for default messages
-            for (const [key, value] of Object.entries(this.messagePresets)) {
-                let missing = false
+            for (const [key, value] of Object.entries(this.sharedPresets)) {
                 let color = 0
                 for (const field of value) {
-                    // If all of the expressions match, add this and move on
-                    if (field[0] === '') {
-                        continue
+                    if (!(key in dict)) {
+                        dict[key] = { messages: [[...field, color++]] }
+                    } else {
+                        dict[key].messages.push([...field, color++])
                     }
-                    missing = missing || !this.isAvailable(field)
-                    if (!missing) {
-                        if (!(key in dict)) {
-                            dict[key] = { messages: [[...field, color++]] }
-                        } else {
-                            dict[key].messages.push([...field, color++])
-                        }
-                    }
-                }
-                if (missing) {
-                    delete dict[key]
                 }
             }
-            // And again for user presets
             for (const [key, value] of Object.entries(this.userPresets)) {
-                let missing = false
+                delete dict[key]
                 let color = 0
                 for (const field of value) {
-                    // If all of the expressions match, add this and move on
-                    missing = missing || !this.isAvailable(field)
-                    if (!missing) {
-                        if (!(key in dict)) {
-                            dict[key] = { messages: [[...field, color++]] }
-                        } else {
-                            dict[key].messages.push([...field, color++])
-                        }
+                    if (!(key in dict)) {
+                        dict[key] = { messages: [[...field, color++]] }
+                    } else {
+                        dict[key].messages.push([...field, color++])
                     }
                 }
             }

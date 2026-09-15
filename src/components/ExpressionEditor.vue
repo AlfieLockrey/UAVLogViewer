@@ -1,10 +1,10 @@
 <template>
   <div class="code-editor">
       <input class="code-input"
-                :value="value"
+                :value="draftValue"
                 @input="updateValue($event.target.value)"
                 @keydown="handleKeyDown"
-                @blur="hideSuggestions"
+                @blur="commitValue(); hideSuggestions()"
                 @focus="handleInput"
                 ref="codeEditor"/>
       <div v-if="showSuggestions" class="suggestions-box" :style="suggestionsBoxStyle">
@@ -35,7 +35,13 @@ export default {
             showSuggestions: false,
             selectedIndex: 0,
             currentWord: '',
-            cursorPosition: { top: 0, left: 0 }
+            cursorPosition: { top: 0, left: 0 },
+            draftValue: this.value
+        }
+    },
+    watch: {
+        value (value) {
+            if (document.activeElement !== this.$refs.codeEditor) this.draftValue = value
         }
     },
     computed: {
@@ -54,8 +60,11 @@ export default {
     },
     methods: {
         updateValue (value) {
-            this.$emit('input', value)
+            this.draftValue = value
             this.handleInput()
+        },
+        commitValue () {
+            if (this.draftValue !== this.value) this.$emit('input', this.draftValue)
         },
         hideSuggestions () {
             setTimeout(() => {
@@ -64,7 +73,7 @@ export default {
         },
         handleInput () {
             const cursorPosition = this.$refs.codeEditor.selectionStart
-            const textBeforeCursor = this.value.slice(0, cursorPosition)
+            const textBeforeCursor = this.draftValue.slice(0, cursorPosition)
 
             if (this.shouldShowSuggestions(textBeforeCursor)) {
                 const currentWord = this.getCurrentWord(textBeforeCursor)
@@ -112,8 +121,8 @@ export default {
         },
         applySuggestion (suggestion) {
             const cursorPosition = this.$refs.codeEditor.selectionStart
-            const textBeforeCursor = this.value.slice(0, cursorPosition)
-            const textAfterCursor = this.value.slice(cursorPosition)
+            const textBeforeCursor = this.draftValue.slice(0, cursorPosition)
+            const textAfterCursor = this.draftValue.slice(cursorPosition)
             const currentWord = this.getCurrentWord(textBeforeCursor)
             const lastChar = textBeforeCursor.slice(-1)
             const operators = ['+', '-', '*', '/', '=', '(', ',', ' ']
@@ -141,7 +150,7 @@ export default {
         updateCursorPosition () {
             const input = this.$refs.codeEditor
             const inputRect = input.getBoundingClientRect()
-            const textBeforeCursor = this.value.slice(0, input.selectionStart)
+            const textBeforeCursor = this.draftValue.slice(0, input.selectionStart)
 
             // Create temporary element to measure text width
             const span = document.createElement('span')
