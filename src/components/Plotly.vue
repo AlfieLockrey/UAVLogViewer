@@ -214,6 +214,7 @@ export default {
         this.$eventHub.$off('addPlots')
         this.$eventHub.$off('hidePlot')
         this.$eventHub.$off('togglePlot')
+        this.$eventHub.$off('clearPlot')
         this.$eventHub.$off('setPresetYAxisRanges')
         clearInterval(this.interval)
     },
@@ -226,7 +227,8 @@ export default {
             waitingForMessages: false,
             unavailableMessages: new Set(),
             plotHandlersAttached: false,
-            loadingPresetYAxisRanges: false
+            loadingPresetYAxisRanges: false,
+            plotGeneration: 0
         }
     },
     methods: {
@@ -346,7 +348,7 @@ export default {
         resize () {
             Plotly.Plots.resize(this.gd)
         },
-        waitForMessages (messages) {
+        waitForMessages (messages, generation = this.plotGeneration) {
             for (const message of messages) {
                 this.$eventHub.$emit('loadType', message)
             }
@@ -355,6 +357,11 @@ export default {
             let counter = 0
             return new Promise((resolve, reject) => {
                 interval = setInterval(function () {
+                    if (generation !== _this.plotGeneration) {
+                        clearInterval(interval)
+                        resolve(false)
+                        return
+                    }
                     for (const message of messages) {
                         if (!_this.loadedMessages().includes(message)) {
                             counter += 1
@@ -367,13 +374,17 @@ export default {
                         }
                     }
                     clearInterval(interval)
-                    resolve()
+                    resolve(true)
                 }, 300)
             })
         },
         onRangeChanged (event) {
             this.addMaxMinMeanToTitles()
-            this.captureYAxisRanges()
+            // The relayout payload is the exact range produced by a drag or
+            // scroll gesture.  Prefer it over a later layout read so the axis
+            // limits controls follow the plot without accumulating tiny
+            // floating-point differences during redraws.
+            this.captureYAxisRanges(event)
             if (event !== undefined) {
                 // this.$router.push({query: query})
                 if (event['xaxis.range']) {
@@ -406,9 +417,10 @@ export default {
             const gd = this.gd
             const xRange = gd.layout.xaxis.range
 
-            let needsRelayout = false
+            const changedTraceIndices = []
+            const changedTraceNames = []
 
-            gd.data.forEach(trace => {
+            gd.data.forEach((trace, index) => {
                 const len = Math.min(trace.x.length, trace.y.length)
                 let count = 0
                 let sum = 0
@@ -432,12 +444,15 @@ export default {
     Mean: ${(sum / count).toFixed(2)}`
 
                 if (trace.name.indexOf(extraData) === -1) {
-                    trace.name = trace.name.split(' | ')[0] + extraData
-                    needsRelayout = true
+                    changedTraceIndices.push(index)
+                    changedTraceNames.push(trace.name.split(' | ')[0] + extraData)
                 }
             })
-            if (needsRelayout) {
-                Plotly.relayout(this.gd, this.gd.layout)
+            if (changedTraceIndices.length) {
+                // Re-layouting the complete layout here made Plotly recalculate
+                // axes after a wheel zoom.  Updating only the changed trace
+                // labels keeps the current axis ranges intact.
+                Plotly.restyle(this.gd, { name: changedTraceNames }, changedTraceIndices)
             }
         },
         isPlotted (fieldname) {
@@ -533,11 +548,13 @@ export default {
             this.onRangeChanged()
         },
         clearPlot () {
-            while (this.state.expressions.length) {
-                this.state.expressions.pop()
-            }
-            this.state.expressions.lenght = 0
+            this.plotGeneration += 1
+            this.waitingForMessages = false
+            this.loadingPresetYAxisRanges = false
+            this.state.expressions = []
+            this.state.expressionErrors = []
             this.state.currentYAxisRanges = {}
+            this.state.plotLoading = false
             this.setPresetYAxisRanges(null)
         },
         setPresetYAxisRanges (ranges, loadingPreset = false) {
@@ -556,14 +573,21 @@ export default {
                 return layout
             }, {})
         },
-        captureYAxisRanges () {
+        captureYAxisRanges (event) {
             const layout = this.gd && (this.gd._fullLayout || this.gd.layout)
             if (!layout) return
             const ranges = { ...this.state.currentYAxisRanges }
             for (const axis of this.state.allAxis) {
                 if (!this.state.expressions.some(field => field.axis === axis) && !ranges[axis]) continue
                 const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
-                const range = layout[key] && layout[key].range
+                const eventRange = event && event[`${key}.range`]
+                const eventLower = event && event[`${key}.range[0]`]
+                const eventUpper = event && event[`${key}.range[1]`]
+                const layoutRange = layout[key] && layout[key].range
+                const range = eventRange ||
+                    (Number.isFinite(eventLower) && Number.isFinite(eventUpper)
+                        ? [eventLower, eventUpper]
+                        : layoutRange)
                 if (range && Number.isFinite(range[0]) && Number.isFinite(range[1])) {
                     ranges[axis] = [range[0], range[1]]
                 }
@@ -576,7 +600,10 @@ export default {
                 const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
                 const range = ranges[axis]
                 if (range && Number.isFinite(range[0]) && Number.isFinite(range[1]) && range[0] < range[1]) {
-                    plotOptions[key].range = range
+                    // Keep stored ranges independent of Plotly's mutable layout
+                    // objects, which prevents repeated plot creation drifting a
+                    // saved range by a small amount.
+                    plotOptions[key].range = [range[0], range[1]]
                     plotOptions[key].autorange = false
                 } else {
                     delete plotOptions[key].range
@@ -847,9 +874,10 @@ export default {
         },
         plot () {
             console.log('plot()')
+            const generation = this.plotGeneration
             if (this.state.expressions.length === 0) {
                 console.log('no expressions to plot')
-                this.state.plotLoading = false
+                if (generation === this.plotGeneration) this.state.plotLoading = false
                 return
             }
             this.state.plotLoading = true
@@ -879,12 +907,14 @@ export default {
             const missingMessages = messages.filter(message => !(message in this.state.messages) ||
                 this.state.messages[message].length === 0)
             if (missingMessages.length > 0) {
-                if (this.waitingForMessages) return
-                this.waitingForMessages = true
-                this.waitForMessages(missingMessages).then(() => {
+                if (this.waitingForMessages === generation) return
+                this.waitingForMessages = generation
+                this.waitForMessages(missingMessages, generation).then((loaded) => {
+                    if (generation !== this.plotGeneration || !loaded) return
                     this.waitingForMessages = false
                     this.plot()
                 }).catch((error) => {
+                    if (generation !== this.plotGeneration) return
                     this.waitingForMessages = false
                     for (const message of missingMessages) this.unavailableMessages.add(message)
                     console.error(error)
@@ -990,6 +1020,7 @@ export default {
             }
             console.log('plotting done in ' + (new Date() - start) + 'ms')
             Promise.resolve(this.plotInstance).then(() => {
+                if (generation !== this.plotGeneration) return null
                 // Plotly can perform a final autorange while completing newPlot.  Apply
                 // a loaded preset once more after that pass so its saved limits win.
                 if (this.loadingPresetYAxisRanges && this.state.pendingYAxisRanges &&
@@ -999,6 +1030,7 @@ export default {
                 }
                 return null
             }).then(() => {
+                if (generation !== this.plotGeneration) return
                 this.captureYAxisRanges()
                 if (this.loadingPresetYAxisRanges) {
                     this.loadingPresetYAxisRanges = false
@@ -1019,7 +1051,7 @@ export default {
             this.addEvents()
             this.addParamChanges()
 
-            this.state.plotLoading = false
+            if (generation === this.plotGeneration) this.state.plotLoading = false
             this.updateChildTimeAxes()
 
             const bglayer = document.getElementsByClassName('bglayer')[0]

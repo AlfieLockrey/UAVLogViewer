@@ -55,22 +55,23 @@
         <button class="add-expression" @click="createNewExpression">
           <i class="fa fa-plus" aria-hidden="true"></i>Add Expression
         </button>
-        <button v-if="state.expressions.length > 0" class="save-preset" v-b-modal.modal-prevent-closing>
+        <button class="save-preset" v-b-modal.modal-prevent-closing>
           <i class="fa fa-check-circle" aria-hidden="true"></i>Save Preset
         </button>
-        <button v-if="state.expressions.length > 0" class="save-preset" @click="exportPreset">
+        <button class="save-preset" @click="exportPreset">
           <i class="fa fa-download" aria-hidden="true"></i>Export Preset
         </button>
         <button class="save-preset" @click="$refs.presetFile.click()">
           <i class="fa fa-upload" aria-hidden="true"></i>Import Preset
         </button>
-        <button v-if="sharedPresetSupported" class="save-preset" @click="chooseSharedPresetFolder">
+        <button class="save-preset" :title="sharedPresetSupported
+          ? 'Choose a shared preset folder' : 'Shared preset folders require Chrome or Edge on desktop'"
+          @click="chooseSharedPresetFolder">
           <i class="fa fa-folder-open" aria-hidden="true"></i>Preset Folder
         </button>
         <input ref="presetFile" class="preset-file-input" type="file" accept="application/json,.json"
           @change="importPreset">
-        <button class="save-preset" v-if="state.expressions.length > 0" v-b-modal.modal-prevent-closing
-          @click="$eventHub.$emit('clearPlot')">
+        <button class="save-preset" @click="$eventHub.$emit('clearPlot')">
           <i class="fa fa-ban" aria-hidden="true"></i>
           clear
         </button>
