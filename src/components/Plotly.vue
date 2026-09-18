@@ -12,6 +12,7 @@ import { isNumber } from 'underscore'
 import { getAxisTitle, getTraceLabel } from '../tools/plotLabels.js'
 import { getElapsedOrigin, getPlotHoverTemplate, getPlotHoverValues, getPlotTimeAxis } from '../tools/plotTimeAxis.js'
 import { getPlotStatistics } from '../tools/plotStatistics.js'
+import { findSeriesFunctionCall, getSeriesAggregate } from '../tools/seriesFunctions.js'
 import {
     annotationSources, combineAnnotationSets, createTextMessageAnnotations
 } from '../tools/plotAnnotations.js'
@@ -903,6 +904,23 @@ export default {
             }
             return true
         },
+        resolveSeriesFunctions (sourceExpression) {
+            let expression = sourceExpression
+            try {
+                let call = findSeriesFunctionCall(expression)
+                while (call !== null) {
+                    if (!call.argument) return { error: new Error(call.name + ' requires an expression.') }
+                    const series = this.evaluateExpression(call.argument)
+                    if ('error' in series) return series
+                    const value = getSeriesAggregate(call.name, series.y)
+                    expression = expression.slice(0, call.start) + String(value) + expression.slice(call.end)
+                    call = findSeriesFunctionCall(expression)
+                }
+            } catch (error) {
+                return { error }
+            }
+            return { expression }
+        },
         evaluateExpression (expression1) {
             const start = new Date()
             if (expression1 in this.state.plotCache) {
@@ -938,7 +956,9 @@ export default {
             // used to find the corresponding time indexes between messages
             const timeIndexes = new Array(fields.length).fill(0)
             const y = []
-            let expression = expression1
+            const resolvedSeriesFunctions = this.resolveSeriesFunctions(expression1)
+            if ('error' in resolvedSeriesFunctions) return resolvedSeriesFunctions
+            let expression = resolvedSeriesFunctions.expression
             // eslint-disable-next-line
             for (let field in fields) {
                 if (isNaN(field)) {
@@ -1031,6 +1051,13 @@ export default {
             const generation = this.plotGeneration
             if (this.state.expressions.length === 0) {
                 console.log('no expressions to plot')
+                this.expressionTraceIndexes = []
+                this.plotOptions.annotations = []
+                this.plotOptions.shapes = []
+                if (this.gd && this.plotInstance !== null) {
+                    this.plotInstance = Plotly.react(this.gd, [], this.plotOptions)
+                    this.cursor = null
+                }
                 if (generation === this.plotGeneration) this.state.plotLoading = false
                 return
             }

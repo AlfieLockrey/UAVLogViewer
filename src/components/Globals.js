@@ -44,6 +44,7 @@ export const store = {
     showRangeSlider: false,
     plotCount: 1,
     syncPlotTime: true,
+    lastPresetName: '',
     worldTimeAvailable: false,
     worldTimeStartMs: 0,
     worldTimeZone: '',

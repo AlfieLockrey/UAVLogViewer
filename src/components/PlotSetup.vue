@@ -204,7 +204,9 @@ export default {
                 'mag_heading_df(MAG[0],ATT)',
                 'mag_heading(RAW_IMU,ATTITUDE)',
                 'max(x,y)',
-                'min(x,y)'
+                'min(x,y)',
+                'maxseries(x)',
+                'minseries(x)'
             ]
             for (const name of this.state.namedFloats) {
                 additionalCompletionItems.push(`named(NAMED_VALUE_FLOAT,"${name}")`)
@@ -317,6 +319,7 @@ export default {
             }
         },
         async savePreset (name) {
+            this.state.lastPresetName = name
             const myStorage = window.localStorage
             const saved = JSON.parse(myStorage.getItem('savedFields')) || {}
             saved[name] = this.state.expressions.map(field =>
@@ -400,7 +403,7 @@ export default {
         },
 
         resetModal () {
-            this.name = ''
+            this.name = this.state.lastPresetName || ''
         },
         async handleOk (bvModalEvt) {
             // Prevent modal from closing

@@ -101,6 +101,7 @@ export default {
             this.$eventHub.$emit('sharedPresetDeleted')
         },
         openPreset (preset, presetName) {
+            this.state.lastPresetName = presetName
             const savedAxisRanges = JSON.parse(window.localStorage.getItem('savedAxisRanges')) || {}
             const sharedAxisRanges = JSON.parse(window.localStorage.getItem('sharedAxisRanges')) || {}
             const savedAxisLabels = JSON.parse(window.localStorage.getItem('savedAxisLabels')) || {}
