@@ -4,6 +4,11 @@ const tickSteps = [1, 2, 5]
 
 const isArmed = value => value === true || value === 'Armed'
 
+const hasWorldTime = context => context.mode === 'world' && context.worldStart instanceof Date &&
+    Number.isFinite(context.worldStart.getTime()) && Number.isFinite(context.worldStartMs)
+
+const elapsedOrigin = context => Number.isFinite(context.elapsedOrigin) ? context.elapsedOrigin : 0
+
 export const getElapsedOrigin = (events, traces) => {
     const armed = (events || []).find(event => isArmed(event[1]))
     if (armed) return armed[0]
@@ -21,29 +26,30 @@ const tickStep = (range) => {
 }
 
 export const formatPlotTime = (time, context) => {
-    if (context.mode === 'world' && context.worldStart instanceof Date && !isNaN(context.worldStart)) {
+    if (hasWorldTime(context)) {
         return DateTime.fromMillis(context.worldStart.getTime() + time - context.worldStartMs)
             .setZone(context.worldTimeZone || 'utc')
             .toFormat('HH:mm:ss')
     }
-    return ((time - context.elapsedOrigin) / 1000).toFixed(3)
+    return ((time - elapsedOrigin(context)) / 1000).toFixed(3)
 }
 
 export const getPlotHoverValues = (times, context) => {
-    const values = new Float64Array(times.length)
-    const offset = context.mode === 'world'
+    const useWorldTime = hasWorldTime(context)
+    const values = useWorldTime ? [] : new Float64Array(times.length)
+    const offset = useWorldTime
         ? context.worldStart.getTime() - context.worldStartMs
-        : context.elapsedOrigin
+        : elapsedOrigin(context)
     for (let index = 0; index < times.length; index++) {
-        values[index] = context.mode === 'world'
-            ? times[index] + offset
+        values[index] = useWorldTime
+            ? formatPlotTime(times[index], context)
             : Math.round(((times[index] - offset) / 1000) * 1000) / 1000
     }
     return values
 }
 
-export const getPlotHoverTemplate = context => context.mode === 'world'
-    ? '%{customdata|%H:%M:%S}<br>%{y}<extra>%{meta}</extra>'
+export const getPlotHoverTemplate = context => hasWorldTime(context)
+    ? '%{customdata}<br>%{y}<extra>%{meta}</extra>'
     : '%{customdata}<br>%{y}<extra>%{meta}</extra>'
 
 export const getPlotTimeAxis = (range, context, domain, includeRangeSlider = true) => {
@@ -57,7 +63,7 @@ export const getPlotTimeAxis = (range, context, domain, includeRangeSlider = tru
     }
     const axis = {
         domain,
-        title: context.mode === 'world' ? 'World time' : 'Elapsed time (s)',
+        title: hasWorldTime(context) ? 'World time' : 'Elapsed time (s)',
         tickmode: 'array'
     }
     if (validRange) {

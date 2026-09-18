@@ -500,7 +500,7 @@ a.centered-section {
     @media only screen and (max-width: 992px) {
         .nav-side-menu {
             position: fixed;
-            width: 100%;
+            width: 50%;
             height: auto;
             max-height: 100%;
             z-index: 1002;
@@ -543,11 +543,11 @@ a.centered-section {
 
     @media only screen and (min-width: 991px) and (max-width: 1439px) {
         .nav-side-menu {
-            max-width: 42% !important;
+            max-width: 47% !important;
         }
 
         .col-lg-10 {
-            max-width: 58% !important;
+            max-width: 53% !important;
         }
 
         main {
@@ -557,7 +557,7 @@ a.centered-section {
 
     @media only screen and (min-width: 1440px) and (max-width: 2000px) {
         .nav-side-menu {
-        max-width: 35% !important;
+        max-width: 40% !important;
         }
 
         main {
@@ -565,13 +565,13 @@ a.centered-section {
         }
 
         .col-lg-10 {
-            max-width: 65% !important;
+            max-width: 60% !important;
         }
     }
 
     @media only screen and (min-width: 2000px) {
         .nav-side-menu {
-        max-width: 30% !important;
+        max-width: 32% !important;
         }
 
         main {
@@ -579,7 +579,7 @@ a.centered-section {
         }
 
         .col-lg-10 {
-            max-width: 70% !important;
+            max-width: 68% !important;
         }
     }
 

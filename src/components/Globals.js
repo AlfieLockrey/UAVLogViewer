@@ -60,7 +60,9 @@ export const store = {
     cameraType: 'follow',
     expressions: [], // holds message name
     expressionErrors: [],
+    expressionStats: {},
     currentYAxisRanges: {},
+    currentYAxisLabels: {},
     pendingYAxisRanges: null,
     plotCache: {},
     allAxis: [0, 1, 2, 3, 4, 5],

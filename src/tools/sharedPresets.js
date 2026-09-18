@@ -80,25 +80,31 @@ export const selectSharedPresetDirectory = async () => {
 
 export const loadSharedPresets = async () => {
     const directory = await getDirectory()
-    if (!directory) return { directory: null, presets: {}, yAxisRanges: {}, permission: false }
-    if (!await hasPermission(directory, 'read')) return { directory, presets: {}, yAxisRanges: {}, permission: false }
+    if (!directory) return { directory: null, presets: {}, yAxisRanges: {}, yAxisLabels: {}, permission: false }
+    if (!await hasPermission(directory, 'read')) {
+        return { directory, presets: {}, yAxisRanges: {}, yAxisLabels: {}, permission: false }
+    }
 
     const presets = {}
     const yAxisRanges = {}
+    const yAxisLabels = {}
     for await (const handle of directory.values()) {
         if (handle.kind !== 'file' || !handle.name.endsWith('.uavlog-preset.json')) continue
         try {
             const preset = parsePortablePreset(await (await handle.getFile()).text())
             presets[preset.name] = preset.fields
             yAxisRanges[preset.name] = preset.yAxisRanges
+            yAxisLabels[preset.name] = preset.yAxisLabels
         } catch (error) {
             console.warn(`Skipping invalid shared preset ${handle.name}:`, error)
         }
     }
-    return { directory, presets, yAxisRanges, permission: true }
+    return { directory, presets, yAxisRanges, yAxisLabels, permission: true }
 }
 
-export const saveSharedPreset = async (directory, name, expressions, overwrite = false, yAxisRanges = {}) => {
+export const saveSharedPreset = async (
+    directory, name, expressions, overwrite = false, yAxisRanges = {}, yAxisLabels = {}
+) => {
     if (!directory || !await hasPermission(directory, 'readwrite')) {
         throw new Error('The shared preset folder is no longer available. Choose it again in Plot Setup.')
     }
@@ -119,6 +125,8 @@ export const saveSharedPreset = async (directory, name, expressions, overwrite =
     }
 
     const fileHandle = await directory.getFileHandle(filename, { create: true })
-    await writeFile(fileHandle, JSON.stringify(createPortablePreset(name, expressions, yAxisRanges), null, 2) + '\n')
+    await writeFile(fileHandle, JSON.stringify(
+        createPortablePreset(name, expressions, yAxisRanges, yAxisLabels), null, 2
+    ) + '\n')
     return { exists: false }
 }

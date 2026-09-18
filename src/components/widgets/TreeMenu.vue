@@ -83,13 +83,19 @@ export default {
             }
             delete saved[preset]
             myStorage.setItem('savedFields', JSON.stringify(saved))
+            const savedAxisLabels = JSON.parse(myStorage.getItem('savedAxisLabels')) || {}
+            delete savedAxisLabels[preset]
+            myStorage.setItem('savedAxisLabels', JSON.stringify(savedAxisLabels))
             this.$eventHub.$emit('presetsChanged')
         },
         openPreset (preset, presetName) {
             const savedAxisRanges = JSON.parse(window.localStorage.getItem('savedAxisRanges')) || {}
             const sharedAxisRanges = JSON.parse(window.localStorage.getItem('sharedAxisRanges')) || {}
+            const savedAxisLabels = JSON.parse(window.localStorage.getItem('savedAxisLabels')) || {}
+            const sharedAxisLabels = JSON.parse(window.localStorage.getItem('sharedAxisLabels')) || {}
             const isShared = preset[0] && preset[0][7] === 'shared'
             const yAxisRanges = (isShared ? sharedAxisRanges : savedAxisRanges)[presetName] || null
+            const yAxisLabels = (isShared ? sharedAxisLabels : savedAxisLabels)[presetName] || null
             const msgs = preset.map(msg =>
                 [msg[0], msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8]]
             )
@@ -99,6 +105,7 @@ export default {
                 // log, so all preset events must be emitted after that tick.
                 this.$eventHub.$emit('clearPlot')
                 this.$eventHub.$emit('setPresetYAxisRanges', yAxisRanges, true)
+                this.$eventHub.$emit('setPresetYAxisLabels', yAxisLabels)
                 this.$eventHub.$emit('addPlots', msgs)
             })
         }

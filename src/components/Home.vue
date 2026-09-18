@@ -257,8 +257,14 @@ export default {
                 this.state.plotTimeMode = 'elapsed'
                 return
             }
+            const trajectoryTimes = trajectory.map(point => Number(point[3])).filter(Number.isFinite)
+            if (trajectoryTimes.length === 0) {
+                this.state.worldTimeAvailable = false
+                this.state.plotTimeMode = 'elapsed'
+                return
+            }
             const firstPoint = trajectory[0]
-            this.state.worldTimeStartMs = trajectory.reduce((min, point) => Math.min(min, point[3]), firstPoint[3])
+            this.state.worldTimeStartMs = Math.min(...trajectoryTimes)
             this.state.worldTimeZone = tzlookup(firstPoint[1], firstPoint[0])
             this.state.worldTimeAvailable = true
         }
@@ -275,6 +281,16 @@ export default {
         AttitudeViewer,
         MagFitTool,
         EkfHelperTool
+    },
+    watch: {
+        'state.showMap' () {
+            // The plot's container changes height when the map is hidden or
+            // restored.  Plotly needs one measurement after Vue has applied
+            // that layout change before it can use the reclaimed space.
+            this.$nextTick(() => {
+                if (this.state.plotOn) this.$eventHub.$emit('force-resize-plotly')
+            })
+        }
     },
     computed: {
         mapOk () {

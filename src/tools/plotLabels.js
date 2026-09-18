@@ -1,9 +1,10 @@
 const nonEmptyLabel = value => typeof value === 'string' ? value.trim() : ''
 
-export const getTraceLabel = field => nonEmptyLabel(field.axisLabel) || field.name
+export const getTraceLabel = field => nonEmptyLabel(field.seriesName) || field.name
 
-export const getAxisTitle = (fields, axis) => {
+export const getAxisTitle = (fields, axis, axisLabels = {}) => {
+    const axisLabel = nonEmptyLabel(axisLabels[axis])
+    if (axisLabel) return axisLabel
     const axisFields = fields.filter(field => field.axis === axis)
-    const labelledField = axisFields.find(field => nonEmptyLabel(field.axisLabel))
-    return labelledField ? nonEmptyLabel(labelledField.axisLabel) : axisFields.map(field => field.name).join(', ')
+    return axisFields.map(field => field.name).join(', ')
 }

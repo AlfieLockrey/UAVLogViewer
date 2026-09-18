@@ -125,14 +125,15 @@ export default {
         async loadSharedPresets () {
             try {
                 const shared = await loadSharedPresets()
-                this.setSharedPresets(shared.presets, shared.yAxisRanges)
+                this.setSharedPresets(shared.presets, shared.yAxisRanges, shared.yAxisLabels)
             } catch (error) {
                 console.warn('Unable to load shared presets:', error)
             }
         },
-        setSharedPresets (presets, yAxisRanges = {}) {
+        setSharedPresets (presets, yAxisRanges = {}, yAxisLabels = {}) {
             this.sharedPresets = presets
             window.localStorage.setItem('sharedAxisRanges', JSON.stringify(yAxisRanges))
+            window.localStorage.setItem('sharedAxisLabels', JSON.stringify(yAxisLabels))
             for (const preset in this.sharedPresets) {
                 for (const message in this.sharedPresets[preset]) {
                     this.sharedPresets[preset][message][7] = 'shared'

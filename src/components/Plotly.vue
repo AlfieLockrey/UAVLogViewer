@@ -11,6 +11,7 @@ import Vue from 'vue'
 import { isNumber } from 'underscore'
 import { getAxisTitle, getTraceLabel } from '../tools/plotLabels.js'
 import { getElapsedOrigin, getPlotHoverTemplate, getPlotHoverValues, getPlotTimeAxis } from '../tools/plotTimeAxis.js'
+import { getPlotStatistics } from '../tools/plotStatistics.js'
 
 const Color = require('color')
 
@@ -62,7 +63,7 @@ const plotOptions = {
         traceorder: 'normal',
         borderwidth: 1
     },
-    showlegend: true,
+    showlegend: false,
     // eslint-disable-next-line
     plot_bgcolor: '#f8f8f8',
     // eslint-disable-next-line
@@ -208,10 +209,12 @@ export default {
         })
         this.instruction = ''
         this.$eventHub.$on('togglePlot', this.togglePlot)
+        this.$eventHub.$on('removeExpression', this.removeExpression)
         this.$eventHub.$on('addPlots', this.addPlots)
         this.$eventHub.$on('plot', this.plot)
         this.$eventHub.$on('clearPlot', this.clearPlot)
         this.$eventHub.$on('setPresetYAxisRanges', this.setPresetYAxisRanges)
+        this.$eventHub.$on('setPresetYAxisLabels', this.setPresetYAxisLabels)
     },
     beforeDestroy () {
         this.$eventHub.$off('animation-changed')
@@ -219,9 +222,11 @@ export default {
         this.$eventHub.$off('addPlots')
         this.$eventHub.$off('hidePlot')
         this.$eventHub.$off('togglePlot')
+        this.$eventHub.$off('removeExpression')
         this.$eventHub.$off('clearPlot')
         this.$eventHub.$off('setPresetYAxisRanges')
-        if (this.legendUpdateTimer !== null) clearTimeout(this.legendUpdateTimer)
+        this.$eventHub.$off('setPresetYAxisLabels')
+        if (this.statisticsUpdateTimer !== null) clearTimeout(this.statisticsUpdateTimer)
         clearInterval(this.interval)
     },
     data () {
@@ -234,7 +239,9 @@ export default {
             unavailableMessages: new Set(),
             loadingPresetYAxisRanges: false,
             plotGeneration: 0,
-            legendUpdateTimer: null
+            statisticsUpdateTimer: null,
+            expressionTraceIndexes: [],
+            cursorTime: null
         }
     },
     methods: {
@@ -352,7 +359,28 @@ export default {
             return interpolatedY
         },
         resize () {
-            Plotly.Plots.resize(this.gd)
+            Promise.resolve(Plotly.Plots.resize(this.gd)).then(() => this.updateCursor())
+        },
+        updateCursor (time = this.cursorTime) {
+            if (!this.cursor || !this.gd) return
+            const bglayer = this.gd.getElementsByClassName('bglayer')[0]
+            const rect = bglayer && bglayer.childNodes[0]
+            const range = this.gd.layout && this.gd.layout.xaxis && this.gd.layout.xaxis.range
+            if (!rect || !range) return
+
+            const x = parseFloat(rect.getAttribute('x'))
+            const y = parseFloat(rect.getAttribute('y'))
+            const width = parseFloat(rect.getAttribute('width'))
+            const height = parseFloat(rect.getAttribute('height'))
+            if (![x, y, width, height].every(Number.isFinite)) return
+
+            const cursorX = Number.isFinite(time)
+                ? x + width * (time - range[0]) / (range[1] - range[0])
+                : x
+            this.cursor.setAttribute('x1', cursorX)
+            this.cursor.setAttribute('x2', cursorX)
+            this.cursor.setAttribute('y1', y)
+            this.cursor.setAttribute('y2', y + height)
         },
         waitForMessages (messages, generation = this.plotGeneration) {
             for (const message of messages) {
@@ -389,7 +417,7 @@ export default {
                 (Number.isFinite(event['xaxis.range[0]']) && Number.isFinite(event['xaxis.range[1]'])
                     ? [event['xaxis.range[0]'], event['xaxis.range[1]']]
                     : null))
-            this.scheduleLegendStatsUpdate(eventXRange)
+            this.scheduleExpressionStatsUpdate(eventXRange)
             // The relayout payload is the exact range produced by a drag or
             // scroll gesture.  Prefer it over a later layout read so the axis
             // limits controls follow the plot without accumulating tiny
@@ -411,13 +439,13 @@ export default {
                 }
             }
         },
-        scheduleLegendStatsUpdate (eventRange) {
-            if (this.legendUpdateTimer !== null) clearTimeout(this.legendUpdateTimer)
-            this.legendUpdateTimer = setTimeout(() => {
-                this.legendUpdateTimer = null
+        scheduleExpressionStatsUpdate (eventRange) {
+            if (this.statisticsUpdateTimer !== null) clearTimeout(this.statisticsUpdateTimer)
+            this.statisticsUpdateTimer = setTimeout(() => {
+                this.statisticsUpdateTimer = null
                 const layout = this.gd && (this.gd._fullLayout || this.gd.layout)
                 const finalRange = layout && layout.xaxis && layout.xaxis.range
-                this.addMaxMinMeanToTitles(finalRange || eventRange)
+                this.updateExpressionStats(finalRange || eventRange)
             }, 0)
         },
 
@@ -432,47 +460,16 @@ export default {
                 child.setTimeRange(timeRange)
             }
         },
-        addMaxMinMeanToTitles (range) {
+        updateExpressionStats (range) {
             const gd = this.gd
             const xRange = range || gd.layout.xaxis.range
 
-            const changedTraceIndices = []
-            const changedTraceNames = []
-
-            gd.data.forEach((trace, index) => {
-                const len = Math.min(trace.x.length, trace.y.length)
-                let count = 0
-                let sum = 0
-                let min = Infinity
-                let max = -Infinity
-
-                for (let i = 0; i < len; i++) {
-                    const x = trace.x[i]
-                    const y = trace.y[i]
-
-                    if (x > xRange[0] && x < xRange[1] && Number.isFinite(y)) {
-                        count += 1
-                        sum += y
-                        min = Math.min(min, y)
-                        max = Math.max(max, y)
-                    }
-                }
-                if (count === 0) return
-                const extraData = ` | Min: ${min.toFixed(2)} \
-    Max: ${max.toFixed(2)} \
-    Mean: ${(sum / count).toFixed(2)}`
-
-                if (trace.name.indexOf(extraData) === -1) {
-                    changedTraceIndices.push(index)
-                    changedTraceNames.push(trace.name.split(' | ')[0] + extraData)
-                }
-            })
-            if (changedTraceIndices.length) {
-                // Re-layouting the complete layout here made Plotly recalculate
-                // axes after a wheel zoom.  Updating only the changed trace
-                // labels keeps the current axis ranges intact.
-                Plotly.restyle(this.gd, 'name', changedTraceNames, changedTraceIndices)
+            const statistics = {}
+            for (const [traceIndex, expressionIndex] of this.expressionTraceIndexes.entries()) {
+                const trace = gd.data[traceIndex]
+                if (trace) statistics[expressionIndex] = getPlotStatistics(trace.x, trace.y, xRange)
             }
+            this.state.expressionStats = statistics
         },
         isPlotted (fieldname) {
             for (const field of this.state.expressions) {
@@ -514,7 +511,7 @@ export default {
             }
             return this.state.allColors[this.state.expressions.length % this.state.allColors.length]
         },
-        createNewField (fieldname, axis, color, functionValue, axisLabel, opacity, lineStyle, visible) {
+        createNewField (fieldname, axis, color, functionValue, seriesName, opacity, lineStyle, visible) {
             if (color === undefined) {
                 color = this.getFirstFreeColor()
             } else if (!isNaN(color)) {
@@ -528,7 +525,7 @@ export default {
                 color: color,
                 axis: axis,
                 function: functionValue,
-                axisLabel: typeof axisLabel === 'string' ? axisLabel : '',
+                seriesName: typeof seriesName === 'string' ? seriesName : '',
                 opacity: typeof opacity === 'number' ? opacity : 1,
                 lineStyle: typeof lineStyle === 'string' ? lineStyle : 'solid',
                 visible: visible !== false
@@ -543,24 +540,23 @@ export default {
                 const axis = plot[1]
                 const color = plot[2]
                 const functionValue = plot[3]
-                const axisLabel = plot[4]
+                const seriesName = plot[4]
                 const opacity = plot[5]
                 const lineStyle = plot[6]
                 const visible = plot[8]
                 if (!this.isPlotted(expression)) {
                     newplots.push(this.createNewField(
-                        expression, axis, color, functionValue, axisLabel, opacity, lineStyle, visible
+                        expression, axis, color, functionValue, seriesName, opacity, lineStyle, visible
                     ))
                 }
             }
             this.state.expressions.push(...newplots)
         },
-        removePlot (fieldname) {
-            const index = this.state.expressions.indexOf(fieldname) // <-- Not supported in <IE9
-            if (index !== -1) {
-                this.state.expressions = this.state.expressions.splice(index, 1)
-            }
-            this.plot()
+        removeExpression (index) {
+            const expression = this.state.expressions[index]
+            if (!expression) return
+            this.resetAxis(expression.axis)
+            this.state.expressions.splice(index, 1)
             if (this.state.expressions.length === 0) {
                 this.state.plotOn = false
             }
@@ -572,7 +568,9 @@ export default {
             this.loadingPresetYAxisRanges = false
             this.state.expressions = []
             this.state.expressionErrors = []
+            this.state.expressionStats = {}
             this.state.currentYAxisRanges = {}
+            this.state.currentYAxisLabels = {}
             this.state.plotLoading = false
             this.setPresetYAxisRanges(null)
         },
@@ -584,6 +582,9 @@ export default {
                 this.applyPresetYAxisRanges()
                 Plotly.relayout(this.gd, this.getYAxisLayout())
             }
+        },
+        setPresetYAxisLabels (labels) {
+            this.state.currentYAxisLabels = labels ? { ...labels } : {}
         },
         getYAxisLayout () {
             return this.state.allAxis.reduce((layout, axis) => {
@@ -650,12 +651,7 @@ export default {
                         index = i
                     }
                 }
-                this.resetAxis(this.state.expressions[index].axis)
-                this.state.expressions.splice(index, 1)
-                if (this.state.expressions.length === 0) {
-                    this.state.plotOn = false
-                }
-                this.onRangeChanged()
+                this.removeExpression(Number(index))
             } else {
                 this.addPlots([[fieldname, axis, color]])
             }
@@ -718,7 +714,7 @@ export default {
             }
         },
         getAxisTitle (fieldAxis) {
-            return getAxisTitle(this.state.expressions, fieldAxis)
+            return getAxisTitle(this.state.expressions, fieldAxis, this.state.currentYAxisLabels)
         },
         findMessagesInExpression (expression) {
             const RE = /(?<message>[A-Z][A-Z0-9_]+(\[[A-Za-z0-9_.%]+\])?)(\.(?<field>[A-Za-z0-9_]+))?/g
@@ -904,6 +900,7 @@ export default {
             this.state.plotLoading = true
             plotOptions.title = this.state.file
             const datasets = []
+            const expressionTraceIndexes = []
             for (const message of this.unavailableMessages) {
                 if (message in this.state.messages) this.unavailableMessages.delete(message)
             }
@@ -986,6 +983,7 @@ export default {
                     },
                     marker: marker
                 })
+                expressionTraceIndexes.push(index)
                 const axisname = expression.axis > 0 ? ('yaxis' + (expression.axis + 1)) : 'yaxis'
 
                 if (expression.axis <= 6) {
@@ -1011,6 +1009,7 @@ export default {
             console.log('starting plotting itself...')
 
             const plotData = datasets
+            this.expressionTraceIndexes = expressionTraceIndexes
 
             if (!this.loadingPresetYAxisRanges) this.captureYAxisRanges()
             this.applyPresetYAxisRanges(
@@ -1065,7 +1064,7 @@ export default {
             this.gd.on('plotly_hover', (data) => {
                 this.$eventHub.$emit('hoveredTime', data.points[0].x)
             })
-            this.addMaxMinMeanToTitles()
+            this.updateExpressionStats()
 
             this.addModeShapes()
             this.addEvents()
@@ -1074,37 +1073,19 @@ export default {
             if (generation === this.plotGeneration) this.state.plotLoading = false
             this.updateChildTimeAxes()
 
-            const bglayer = document.getElementsByClassName('bglayer')[0]
-            const rect = bglayer.childNodes[0]
+            const bglayer = this.gd.getElementsByClassName('bglayer')[0]
             this.cursor = document.createElementNS('http://www.w3.org/2000/svg', 'line')
-            const x = rect.getAttribute('x')
-            const y = rect.getAttribute('y')
-            const y2 = parseInt(y) + parseInt(rect.getAttribute('height'))
             this.cursor.setAttribute('id', 'batata')
-            this.cursor.setAttribute('x1', x)
-            this.cursor.setAttribute('y1', y)
-            this.cursor.setAttribute('x2', x)
-            this.cursor.setAttribute('y2', y2)
             this.cursor.setAttribute('stroke-width', 1)
             this.cursor.setAttribute('stroke', 'black')
             bglayer.append(this.cursor)
+            this.updateCursor()
             console.log('layout done in ' + (new Date() - start) + 'ms')
         },
         setCursorTime (time) {
             console.log('master got hover event at ' + time + 'ms')
-            try {
-                const bglayer = document.getElementsByClassName('bglayer')[0]
-                const rect = bglayer.childNodes[0]
-                const x = parseInt(rect.getAttribute('x'))
-                const width = parseInt(rect.getAttribute('width'))
-                const percTime = (time - this.gd.layout.xaxis.range[0]) /
-                    (this.gd.layout.xaxis.range[1] - this.gd.layout.xaxis.range[0])
-                const newx = x + width * percTime
-                this.cursor.setAttribute('x1', newx)
-                this.cursor.setAttribute('x2', newx)
-            } catch (err) {
-                console.log(err)
-            }
+            this.cursorTime = time
+            this.updateCursor()
         },
         getMode (time) {
             for (const mode in this.state.flightModeChanges) {
@@ -1337,6 +1318,9 @@ export default {
                 this.state.plotTimeMode = 'elapsed'
                 return
             }
+            this.plot()
+        },
+        'state.currentYAxisLabels' () {
             this.plot()
         },
         'state.showRangeSlider' () {

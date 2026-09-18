@@ -208,7 +208,6 @@ export default {
             })
         },
         onRangeChanged (event) {
-            this.addMaxMinMeanToTitles()
             if (event !== undefined) {
                 // this.$router.push({query: query})
                 if (event['xaxis.range']) {
@@ -225,44 +224,10 @@ export default {
                 }
             }
         },
-        addMaxMinMeanToTitles   () {
-            const average = arr => arr.reduce((p, c) => p + c, 0) / arr.length
-            const gd = this.gd
-            const xRange = gd.layout.xaxis.range
-
-            let needsRelayout = false
-
-            gd.data.forEach(trace => {
-                const len = Math.min(trace.x.length, trace.y.length)
-                const xInside = []
-                const yInside = []
-
-                for (let i = 0; i < len; i++) {
-                    const x = trace.x[i]
-                    const y = trace.y[i]
-
-                    if (x > xRange[0] && x < xRange[1]) {
-                        xInside.push(x)
-                        yInside.push(y)
-                    }
-                }
-                const extraData = ` | Min: ${Math.min(...yInside).toFixed(2)} \
-    Max: ${Math.max(...yInside).toFixed(2)} \
-    Mean: ${average(yInside).toFixed(2)}`
-
-                if (trace.name.indexOf(extraData) === -1) {
-                    trace.name = trace.name.split(' | ')[0] + extraData
-                    needsRelayout = true
-                }
-            })
-            if (needsRelayout) {
-                Plotly.relayout(this.gd, this.gd.layout)
-            }
-        },
-
         plot () {
             console.log('plot()')
             const start = new Date()
+            this.plotOptions.showlegend = false
             delete this.plotOptions.xaxis.rangeslider
             this.plotOptions.xaxis = {
                 ...this.plotOptions.xaxis,

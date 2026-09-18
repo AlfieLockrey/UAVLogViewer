@@ -11,11 +11,28 @@
     <b-collapse id="plotsetupcontent" class="menu-content collapse out instant-collapse" visible>
       <ul class="colorpicker plot-wrapper">
         <template v-if="state.expressions.length">
+          <li class="field plotsetup plotsetup-header">
+            <span>Delete</span>
+            <span>Expression</span>
+            <span>Series</span>
+            <span>Axis</span>
+            <span>Colour</span>
+            <span>Opacity</span>
+            <span>Style</span>
+            <span>Show</span>
+            <span>Isolate</span>
+            <span>Min</span>
+            <span>Max</span>
+            <span>Mean</span>
+          </li>
           <template v-for="(field, index) in state.expressions">
             <li class="field plotsetup" :key="'field' + index">
+              <a class="remove-button" @click="$eventHub.$emit('removeExpression', index)">
+                <i class="expand fas fa-trash" title="Remove data"></i>
+              </a>
               <expression-editor class="expression-editor" v-model.lazy="field.name" v-debounce="1000"
                 :suggestions="completionOptions" />
-              <input v-model.lazy="field.axisLabel" class="axis-label" type="text" placeholder="Axis label">
+              <input v-model.lazy="field.seriesName" class="series-name" type="text" placeholder="Series name">
               <select v-model.number="field.axis">
                 <option v-for="axis in state.allAxis" :key="'axisnumber' + axis" :value="axis">{{ axis }}</option>
               </select>
@@ -37,10 +54,12 @@
                 <option value="dashdot">.-</option>
               </select>
               <input class="trace-visible" :checked="field.visible !== false" type="checkbox"
-                title="Show this trace on the plot" @change="field.visible = $event.target.checked">
-              <a class="remove-button" @click="$eventHub.$emit('togglePlot', field.name)">
-                <i class="expand fas fa-trash" title="Remove data"></i>
-              </a>
+                title="Show this trace on the plot" @change="setTraceVisibility(index, $event.target.checked)">
+              <input class="trace-isolate" :checked="field.isolated === true" type="checkbox"
+                title="Show only this trace" @change="setTraceIsolation(index, $event.target.checked)">
+              <strong class="trace-statistic">{{ formatStatistic(index, 'min') }}</strong>
+              <strong class="trace-statistic">{{ formatStatistic(index, 'max') }}</strong>
+              <strong class="trace-statistic">{{ formatStatistic(index, 'mean') }}</strong>
             </li>
             <li v-if="state.expressionErrors[index]" :key="'field' + index + 'err'" class="error">
               <i class="fas fa-exclamation-circle error" :title="state.expressionErrors[index]"></i>
@@ -88,6 +107,8 @@
         <div class="axis-limits">
           <div v-for="axis in state.allAxis" :key="'axis-limit-' + axis" class="axis-limit-row">
             <label>Axis {{ axis }}</label>
+            <input :value="axisLabel(axis)" type="text" placeholder="Axis label"
+              @change="setAxisLabel(axis, $event.target.value)">
             <input :value="formatAxisLimit(axisLimits[axis].min)" type="number" step="any" placeholder="Min"
               @change="setAxisLimit(axis, 'min', $event.target.value)">
             <input :value="formatAxisLimit(axisLimits[axis].max)" type="number" step="any" placeholder="Max"
@@ -113,6 +134,7 @@ import { store } from './Globals.js'
 import debounce from 'v-debounce'
 import ExpressionEditor from './ExpressionEditor.vue'
 import { createPortablePreset, parsePortablePreset } from '../tools/presetFormat.js'
+import { isolateTrace, setTraceVisibility } from '../tools/traceVisibility.js'
 import {
     loadSharedPresets, saveSharedPreset, selectSharedPresetDirectory, supportsSharedPresets
 } from '../tools/sharedPresets.js'
@@ -193,7 +215,7 @@ export default {
                     name: '1+1',
                     color: this.getFirstFreeColor(),
                     axis: this.getFirstFreeAxis(),
-                    axisLabel: '',
+                    seriesName: '',
                     opacity: 1,
                     lineStyle: 'solid',
                     visible: true
@@ -217,7 +239,7 @@ export default {
                 const shared = await loadSharedPresets()
                 this.sharedPresetDirectory = shared.directory
                 this.sharedPresetFolderName = shared.permission ? shared.directory.name : ''
-                this.$eventHub.$emit('sharedPresetsChanged', shared.presets, shared.yAxisRanges)
+                this.$eventHub.$emit('sharedPresetsChanged', shared.presets, shared.yAxisRanges, shared.yAxisLabels)
             } catch (error) {
                 console.warn('Unable to load shared presets:', error)
             }
@@ -228,6 +250,16 @@ export default {
                 this.axisLimits[axis].min = limits ? limits[0] : null
                 this.axisLimits[axis].max = limits ? limits[1] : null
             }
+        },
+        axisLabel (axis) {
+            return this.state.currentYAxisLabels[axis] || ''
+        },
+        setAxisLabel (axis, label) {
+            const labels = { ...this.state.currentYAxisLabels }
+            const value = label.trim()
+            if (value) labels[axis] = value
+            else delete labels[axis]
+            this.$eventHub.$emit('setPresetYAxisLabels', labels)
         },
         setAxisLimits (axis) {
             const limits = this.axisLimits[axis]
@@ -250,6 +282,16 @@ export default {
             this.axisLimits[axis].max = null
             this.$eventHub.$emit('setPresetYAxisRanges', ranges)
         },
+        setTraceVisibility (index, visible) {
+            this.state.expressions = setTraceVisibility(this.state.expressions, index, visible)
+        },
+        setTraceIsolation (index, isolated) {
+            this.state.expressions = isolateTrace(this.state.expressions, index, isolated)
+        },
+        formatStatistic (index, statistic) {
+            const statistics = this.state.expressionStats[index]
+            return statistics ? statistics[statistic].toFixed(2) : '\u2014'
+        },
         async chooseSharedPresetFolder () {
             try {
                 const directory = await selectSharedPresetDirectory()
@@ -264,7 +306,7 @@ export default {
             const myStorage = window.localStorage
             const saved = JSON.parse(myStorage.getItem('savedFields')) || {}
             saved[name] = this.state.expressions.map(field =>
-                [field.name, field.axis, field.color, field.function, field.axisLabel || '',
+                [field.name, field.axis, field.color, field.function, field.seriesName || '',
                     typeof field.opacity === 'number' ? field.opacity : 1, field.lineStyle || 'solid', 'local',
                     field.visible !== false]
             )
@@ -272,17 +314,21 @@ export default {
             const savedAxisRanges = JSON.parse(myStorage.getItem('savedAxisRanges')) || {}
             savedAxisRanges[name] = this.state.currentYAxisRanges
             myStorage.setItem('savedAxisRanges', JSON.stringify(savedAxisRanges))
+            const savedAxisLabels = JSON.parse(myStorage.getItem('savedAxisLabels')) || {}
+            savedAxisLabels[name] = this.state.currentYAxisLabels
+            myStorage.setItem('savedAxisLabels', JSON.stringify(savedAxisLabels))
             this.$eventHub.$emit('presetsChanged')
             if (this.sharedPresetDirectory) {
                 try {
                     let result = await saveSharedPreset(
-                        this.sharedPresetDirectory, name, this.state.expressions, false, this.state.currentYAxisRanges
+                        this.sharedPresetDirectory, name, this.state.expressions, false,
+                        this.state.currentYAxisRanges, this.state.currentYAxisLabels
                     )
                     if (result.exists &&
                         window.confirm(`"${name}" already exists in the shared preset folder. Overwrite it?`)) {
                         result = await saveSharedPreset(
                             this.sharedPresetDirectory, name, this.state.expressions, true,
-                            this.state.currentYAxisRanges
+                            this.state.currentYAxisRanges, this.state.currentYAxisLabels
                         )
                     }
                     if (!result.exists) await this.refreshSharedPresets()
@@ -294,7 +340,9 @@ export default {
         exportPreset () {
             const name = window.prompt('Preset file name', this.state.file || 'UAVLogViewer preset')
             if (!name || !name.trim()) return
-            const preset = createPortablePreset(name.trim(), this.state.expressions, this.state.currentYAxisRanges)
+            const preset = createPortablePreset(
+                name.trim(), this.state.expressions, this.state.currentYAxisRanges, this.state.currentYAxisLabels
+            )
             const blob = new Blob([JSON.stringify(preset, null, 2) + '\n'], { type: 'application/json' })
             const link = document.createElement('a')
             link.href = URL.createObjectURL(blob)
@@ -318,6 +366,9 @@ export default {
                     const savedAxisRanges = JSON.parse(window.localStorage.getItem('savedAxisRanges')) || {}
                     savedAxisRanges[preset.name] = preset.yAxisRanges
                     window.localStorage.setItem('savedAxisRanges', JSON.stringify(savedAxisRanges))
+                    const savedAxisLabels = JSON.parse(window.localStorage.getItem('savedAxisLabels')) || {}
+                    savedAxisLabels[preset.name] = preset.yAxisLabels
+                    window.localStorage.setItem('savedAxisLabels', JSON.stringify(savedAxisLabels))
                     this.$eventHub.$emit('presetsChanged')
                     window.alert(`Imported preset: ${preset.name}`)
                 } catch (error) {
@@ -396,11 +447,19 @@ li.field {
 }
 
 li.plotsetup {
-  display: flex;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 36px 42px 62px 64px 30px 40px repeat(3, 56px);
   align-items: center;
   gap: 3px;
   padding-left: 6px;
   min-width: 0;
+}
+
+.plotsetup-header {
+  font-size: 10px;
+  font-weight: bold;
+  line-height: 1;
+  text-align: center;
 }
 
 i {
@@ -424,9 +483,9 @@ i {
   outline: none;
 }
 
-.axis-label {
+.series-name {
   box-sizing: border-box;
-  flex: 0 1 18%;
+  width: 100%;
   min-width: 0;
   margin-left: 0;
   border: 1px solid grey;
@@ -440,21 +499,36 @@ i {
 }
 
 .expression-editor {
-  /* 40% is a 20% reduction from the previous 50% row allocation. */
-  flex: 0 1 40%;
+  width: 100%;
   min-width: 0;
 }
 
 .line-style {
-  width: 32px;
+  width: 100%;
 }
 
 .trace-visible {
-  flex: 0 0 auto;
   margin: 0;
 }
 
-.axis-label:focus {
+.trace-isolate {
+  margin: 0;
+}
+
+.trace-statistic {
+  width: 100%;
+  font-size: 10px;
+  font-family: monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.remove-button .expand {
+  margin: 0;
+}
+
+.series-name:focus {
   background-color: rgba(241, 248, 255, 0.966);
   outline: none;
 }
@@ -465,7 +539,7 @@ i {
 
 .axis-limit-row {
   display: grid;
-  grid-template-columns: 42px minmax(42px, 116px) minmax(42px, 116px) 38px;
+  grid-template-columns: max-content 18% minmax(42px, 1fr) minmax(42px, 1fr) 38px;
   align-items: center;
   gap: 3px;
   margin: 6px 0;
@@ -476,6 +550,8 @@ i {
 .axis-limit-row label {
   margin: 0;
   white-space: nowrap;
+  position: relative;
+  z-index: 1;
 }
 
 .axis-limit-row input {
