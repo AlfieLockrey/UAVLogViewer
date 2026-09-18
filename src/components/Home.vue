@@ -25,8 +25,8 @@
                 <div class="row"
                      v-bind:class="[state.showMap ? 'plot-with-map' : 'h-100']"
                      v-if="state.plotOn">
-                    <div class="col-12">
-                        <Plotly/>
+                    <div class="col-12 plot-panels">
+                        <Plotly v-for="panel in state.plotCount" :key="panel" :panel-index="panel - 1"/>
                     </div>
                 </div>
                 <div class="row" v-bind:class="[state.plotOn ? 'map-with-plot' : 'h-100']"
@@ -290,6 +290,11 @@ export default {
             this.$nextTick(() => {
                 if (this.state.plotOn) this.$eventHub.$emit('force-resize-plotly')
             })
+        },
+        'state.plotCount' () {
+            this.$nextTick(() => {
+                if (this.state.plotOn) this.$eventHub.$emit('force-resize-plotly')
+            })
         }
     },
     computed: {
@@ -380,6 +385,18 @@ export default {
 
     .map-with-plot {
         height: 33.333333% !important;
+    }
+
+    .plot-panels {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+    }
+
+    .plot-panels > div {
+        flex: 1 1 0;
+        min-height: 0;
     }
 
     div #waiting {

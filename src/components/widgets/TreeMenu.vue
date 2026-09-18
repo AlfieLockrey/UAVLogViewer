@@ -93,6 +93,9 @@ export default {
                 const savedAxisRanges = JSON.parse(myStorage.getItem('savedAxisRanges')) || {}
                 delete savedAxisRanges[preset]
                 myStorage.setItem('savedAxisRanges', JSON.stringify(savedAxisRanges))
+                const savedPlotCounts = JSON.parse(myStorage.getItem('savedPlotCounts')) || {}
+                delete savedPlotCounts[preset]
+                myStorage.setItem('savedPlotCounts', JSON.stringify(savedPlotCounts))
             }
             this.$eventHub.$emit('presetsChanged')
             this.$eventHub.$emit('sharedPresetDeleted')
@@ -102,12 +105,16 @@ export default {
             const sharedAxisRanges = JSON.parse(window.localStorage.getItem('sharedAxisRanges')) || {}
             const savedAxisLabels = JSON.parse(window.localStorage.getItem('savedAxisLabels')) || {}
             const sharedAxisLabels = JSON.parse(window.localStorage.getItem('sharedAxisLabels')) || {}
+            const savedPlotCounts = JSON.parse(window.localStorage.getItem('savedPlotCounts')) || {}
+            const sharedPlotCounts = JSON.parse(window.localStorage.getItem('sharedPlotCounts')) || {}
             const isShared = preset[0] && preset[0][7] === 'shared'
             const yAxisRanges = (isShared ? sharedAxisRanges : savedAxisRanges)[presetName] || null
             const yAxisLabels = (isShared ? sharedAxisLabels : savedAxisLabels)[presetName] || null
+            const plotCount = (isShared ? sharedPlotCounts : savedPlotCounts)[presetName] || 1
             const msgs = preset.map(msg =>
                 [msg[0], msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8]]
             )
+            this.state.plotCount = plotCount
             this.state.plotOn = true
             this.$nextTick(function () {
                 // Plotly is not mounted until plotOn becomes true on a fresh

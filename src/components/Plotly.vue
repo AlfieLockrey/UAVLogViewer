@@ -1,5 +1,5 @@
 <template>
-    <div id="line" ref="line" style="width:100%;height: 100%"></div>
+    <div ref="line" style="width:100%;height: 100%"></div>
 </template>
 
 <script>
@@ -15,10 +15,14 @@ import { getPlotStatistics } from '../tools/plotStatistics.js'
 import {
     annotationSources, combineAnnotationSets, createTextMessageAnnotations
 } from '../tools/plotAnnotations.js'
+import {
+    getAxesForPanel, getLayoutYAxis, getLocalAxis, getPanelForAxis, normalisePlotCount
+} from '../tools/plotPanels.js'
 
 const Color = require('color')
 
 const timeformat = ':02,2f'
+const yAxisPositions = [0.03, 0.07, 0.11, 0.89, 0.93, 0.97]
 let annotationsEvents = []
 let annotationsModes = []
 let annotationsParams = []
@@ -38,7 +42,7 @@ const plotOptions = {
     // eslint-disable-next-line
     paper_bgcolor: 'white',
     // autosize: true,
-    margin: { t: 20, l: 0, b: 30, r: 10 },
+    margin: { t: 20, l: 65, b: 30, r: 75, autoexpand: false },
     xaxis: {
         title: 'Time since boot',
         domain: [0.15, 0.85],
@@ -129,16 +133,21 @@ const plotOptions = {
 }
 
 export default {
+    props: {
+        panelIndex: { type: Number, default: 0 }
+    },
     created () {
         this.$eventHub.$on('cesium-time-changed', this.setCursorTime)
         this.$eventHub.$on('hoveredTime', this.setCursorTime)
         this.$eventHub.$on('force-resize-plotly', this.resize)
         this.$eventHub.$on('child-zoomed', this.onTimeRangeChanged)
+        this.$eventHub.$on('plot-time-range-changed', this.onPlotTimeRangeChanged)
+        this.$eventHub.$on('plot-time-range-requested', this.onPlotTimeRangeRequested)
         this.zoomInterval = null
     },
     mounted () {
         const WIDTH_IN_PERCENT_OF_PARENT = 90
-        d3.select('#line')
+        d3.select(this.$refs.line)
             .append('div')
             .style({
                 width: '100%',
@@ -146,7 +155,7 @@ export default {
                 height: '100%'
             })
 
-        this.gd = d3.select('#line').node()
+        this.gd = d3.select(this.$refs.line).node()
         const _this = this
         this.$nextTick(function () {
             if (this.$route.query.ranges) {
@@ -155,46 +164,55 @@ export default {
                     ranges.push(parseFloat(field))
                 }
                 if (ranges.length > 0) {
-                    plotOptions.xaxis.range = [ranges[0], ranges[1]]
+                    this.plotOptions.xaxis.range = [ranges[0], ranges[1]]
                 }
                 if (ranges.length >= 4) {
-                    plotOptions.yaxis.range = [ranges[2], ranges[3]]
+                    this.plotOptions.yaxis.range = [ranges[2], ranges[3]]
                 }
                 if (ranges.length >= 6) {
-                    plotOptions.yaxis2.range = [ranges[4], ranges[5]]
+                    this.plotOptions.yaxis2.range = [ranges[4], ranges[5]]
                 }
                 if (ranges.length >= 8) {
-                    plotOptions.yaxis3.range = [ranges[6], ranges[7]]
+                    this.plotOptions.yaxis3.range = [ranges[6], ranges[7]]
                 }
                 if (ranges.length >= 10) {
-                    plotOptions.yaxis4.range = [ranges[8], ranges[9]]
+                    this.plotOptions.yaxis4.range = [ranges[8], ranges[9]]
                 }
             }
-            if (this.$route.query.plots) {
+            if (this.panelIndex === 0 && this.$route.query.plots) {
                 for (const field of this.$route.query.plots.split(',')) {
                     _this.addPlots([field])
                 }
             }
+            if (this.panelIndex > 0 && this.state.expressions.length > 0) this.plot()
         })
         this.instruction = ''
-        this.$eventHub.$on('togglePlot', this.togglePlot)
-        this.$eventHub.$on('removeExpression', this.removeExpression)
-        this.$eventHub.$on('addPlots', this.addPlots)
+        if (this.panelIndex === 0) {
+            this.$eventHub.$on('togglePlot', this.togglePlot)
+            this.$eventHub.$on('removeExpression', this.removeExpression)
+            this.$eventHub.$on('addPlots', this.addPlots)
+            this.$eventHub.$on('clearPlot', this.clearPlot)
+        }
         this.$eventHub.$on('plot', this.plot)
-        this.$eventHub.$on('clearPlot', this.clearPlot)
         this.$eventHub.$on('setPresetYAxisRanges', this.setPresetYAxisRanges)
         this.$eventHub.$on('setPresetYAxisLabels', this.setPresetYAxisLabels)
     },
     beforeDestroy () {
-        this.$eventHub.$off('animation-changed')
-        this.$eventHub.$off('cesium-time-changed')
-        this.$eventHub.$off('addPlots')
-        this.$eventHub.$off('hidePlot')
-        this.$eventHub.$off('togglePlot')
-        this.$eventHub.$off('removeExpression')
-        this.$eventHub.$off('clearPlot')
-        this.$eventHub.$off('setPresetYAxisRanges')
-        this.$eventHub.$off('setPresetYAxisLabels')
+        this.$eventHub.$off('cesium-time-changed', this.setCursorTime)
+        this.$eventHub.$off('hoveredTime', this.setCursorTime)
+        this.$eventHub.$off('force-resize-plotly', this.resize)
+        this.$eventHub.$off('child-zoomed', this.onTimeRangeChanged)
+        this.$eventHub.$off('plot-time-range-changed', this.onPlotTimeRangeChanged)
+        this.$eventHub.$off('plot-time-range-requested', this.onPlotTimeRangeRequested)
+        if (this.panelIndex === 0) {
+            this.$eventHub.$off('addPlots', this.addPlots)
+            this.$eventHub.$off('togglePlot', this.togglePlot)
+            this.$eventHub.$off('removeExpression', this.removeExpression)
+            this.$eventHub.$off('clearPlot', this.clearPlot)
+        }
+        this.$eventHub.$off('plot', this.plot)
+        this.$eventHub.$off('setPresetYAxisRanges', this.setPresetYAxisRanges)
+        this.$eventHub.$off('setPresetYAxisLabels', this.setPresetYAxisLabels)
         if (this.statisticsUpdateTimer !== null) clearTimeout(this.statisticsUpdateTimer)
         clearInterval(this.interval)
     },
@@ -210,7 +228,12 @@ export default {
             plotGeneration: 0,
             statisticsUpdateTimer: null,
             expressionTraceIndexes: [],
-            cursorTime: null
+            cursorTime: null,
+            localTimeRange: null,
+            applyingSyncedRange: false,
+            rangeUpdateGeneration: 0,
+            timeCommitGeneration: 0,
+            plotOptions: JSON.parse(JSON.stringify(plotOptions))
         }
     },
     methods: {
@@ -383,10 +406,7 @@ export default {
             })
         },
         onRangeChanged (event) {
-            const eventXRange = event && (event['xaxis.range'] ||
-                (Number.isFinite(event['xaxis.range[0]']) && Number.isFinite(event['xaxis.range[1]'])
-                    ? [event['xaxis.range[0]'], event['xaxis.range[1]']]
-                    : null))
+            const eventXRange = this.getRelayoutXRange(event)
             this.scheduleExpressionStatsUpdate(eventXRange)
             // The relayout payload is the exact range produced by a drag or
             // scroll gesture.  Prefer it over a later layout read so the axis
@@ -394,20 +414,61 @@ export default {
             // floating-point differences during redraws.
             this.captureYAxisRanges(event)
             if (event !== undefined) {
-                // this.$router.push({query: query})
-                if (event['xaxis.range']) {
-                    this.state.timeRange = event['xaxis.range']
-                    this.updatChildrenTimeRange(this.state.timeRange)
-                }
-                if (Number.isFinite(event['xaxis.range[0]']) && Number.isFinite(event['xaxis.range[1]'])) {
-                    this.state.timeRange = [event['xaxis.range[0]'], event['xaxis.range[1]']]
-                    this.updatChildrenTimeRange(this.state.timeRange)
-                }
-                if (event['xaxis.autorange']) {
-                    this.state.timeRange = [this.gd.layout.xaxis.range[0], this.gd.layout.xaxis.range[1]]
-                    this.updatChildrenTimeRange(this.state.timeRange)
+                if (this.applyingSyncedRange) return
+                if (eventXRange) this.handleUserTimeRange([...eventXRange])
+                if (this.hasXAutorange(event)) {
+                    this.handleUserTimeRange([this.gd.layout.xaxis.range[0], this.gd.layout.xaxis.range[1]])
                 }
             }
+        },
+        handleUserTimeRange (range) {
+            if (this.state.syncPlotTime && this.panelIndex !== 0) {
+                this.$eventHub.$emit('plot-time-range-requested', { range })
+                return
+            }
+            if (this.panelIndex === 0) {
+                this.commitTimeRange(range)
+                return
+            }
+            this.applyTimeRange(range)
+        },
+        onPlotTimeRangeRequested ({ range }) {
+            if (this.panelIndex !== 0 || !this.state.syncPlotTime) return
+            this.commitTimeRange(range)
+        },
+        commitTimeRange (range, updateChildren = true) {
+            const generation = ++this.timeCommitGeneration
+            this.state.timeRange = [...range]
+            if (updateChildren) this.updatChildrenTimeRange(this.state.timeRange)
+            const rangeUpdate = this.applyTimeRange(range)
+            Promise.resolve(rangeUpdate).then(() => {
+                if (!this.state.syncPlotTime || generation !== this.timeCommitGeneration) return
+                this.$eventHub.$emit('plot-time-range-changed', {
+                    source: this.panelIndex,
+                    range: [...range]
+                })
+            })
+        },
+        onPlotTimeRangeChanged ({ source, range }) {
+            if (!this.state.syncPlotTime || source === this.panelIndex || !this.gd || !range) return
+            this.applyTimeRange(range)
+        },
+        applyTimeRange (range) {
+            if (!this.gd || !range) return
+            const generation = ++this.rangeUpdateGeneration
+            this.applyingSyncedRange = true
+            return Promise.resolve(Plotly.relayout(this.gd, this.getXAxisRelayout(range))).finally(() => {
+                if (generation !== this.rangeUpdateGeneration) return
+                this.applyingSyncedRange = false
+                this.updateExpressionStats(range)
+                this.updateCursor()
+            })
+        },
+        rangesMatch (first, second) {
+            if (!first || !second || first.length < 2 || second.length < 2) return false
+            const scale = Math.max(Math.abs(Number(second[1]) - Number(second[0])), 1)
+            return Math.abs(Number(first[0]) - Number(second[0])) / scale < 1e-9 &&
+                Math.abs(Number(first[1]) - Number(second[1])) / scale < 1e-9
         },
         scheduleExpressionStatsUpdate (eventRange) {
             if (this.statisticsUpdateTimer !== null) clearTimeout(this.statisticsUpdateTimer)
@@ -418,12 +479,20 @@ export default {
                 this.updateExpressionStats(finalRange || eventRange)
             }, 0)
         },
+        getRelayoutXRange (event) {
+            if (!event) return null
+            if (event['xaxis.range']) return event['xaxis.range']
+            if (Number.isFinite(event['xaxis.range[0]']) && Number.isFinite(event['xaxis.range[1]'])) {
+                return [event['xaxis.range[0]'], event['xaxis.range[1]']]
+            }
+            return null
+        },
+        hasXAutorange (event) {
+            return event && event['xaxis.autorange']
+        },
 
         onTimeRangeChanged (timeRange) {
-            // check if it actually changed, with a delta tolarance
-            this.state.timeRange = timeRange
-
-            this.updatChildrenTimeRange(this.state.timeRange)
+            if (this.panelIndex === 0) this.commitTimeRange(timeRange, false)
         },
         updatChildrenTimeRange (timeRange) {
             for (const child of this.state.childPlots) {
@@ -434,7 +503,12 @@ export default {
             const gd = this.gd
             const xRange = range || gd.layout.xaxis.range
 
-            const statistics = {}
+            const statistics = { ...this.state.expressionStats }
+            this.state.expressions.forEach((expression, index) => {
+                if (getPanelForAxis(expression.axis, this.state.plotCount) === this.panelIndex) {
+                    delete statistics[index]
+                }
+            })
             for (const [traceIndex, expressionIndex] of this.expressionTraceIndexes.entries()) {
                 const trace = gd.data[traceIndex]
                 if (trace) statistics[expressionIndex] = getPlotStatistics(trace.x, trace.y, xRange)
@@ -557,9 +631,9 @@ export default {
             this.state.currentYAxisLabels = labels ? { ...labels } : {}
         },
         getYAxisLayout () {
-            return this.state.allAxis.reduce((layout, axis) => {
-                const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
-                layout[key] = plotOptions[key]
+            return getAxesForPanel(this.panelIndex, this.state.plotCount).reduce((layout, axis) => {
+                const key = getLayoutYAxis(getLocalAxis(axis, this.state.plotCount))
+                layout[key] = this.plotOptions[key]
                 return layout
             }, {})
         },
@@ -567,14 +641,15 @@ export default {
             const layout = this.gd && (this.gd._fullLayout || this.gd.layout)
             if (!layout) return
             const ranges = { ...this.state.currentYAxisRanges }
-            for (const axis of this.state.allAxis) {
+            const panelAxes = getAxesForPanel(this.panelIndex, this.state.plotCount)
+            for (const axis of panelAxes) {
                 const hasVisibleExpression = this.state.expressions.some(
                     field => field.visible !== false && field.axis === axis
                 )
                 if (!hasVisibleExpression && !ranges[axis]) {
                     continue
                 }
-                const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
+                const key = getLayoutYAxis(getLocalAxis(axis, this.state.plotCount))
                 const eventRange = event && event[`${key}.range`]
                 const eventLower = event && event[`${key}.range[0]`]
                 const eventUpper = event && event[`${key}.range[1]`]
@@ -598,23 +673,32 @@ export default {
                     // Keep stored ranges independent of Plotly's mutable layout
                     // objects, which prevents repeated plot creation drifting a
                     // saved range by a small amount.
-                    plotOptions[key].range = [range[0], range[1]]
-                    plotOptions[key].autorange = false
+                    this.plotOptions[key].range = [range[0], range[1]]
+                    this.plotOptions[key].autorange = false
                 } else {
-                    delete plotOptions[key].range
-                    plotOptions[key].autorange = true
+                    delete this.plotOptions[key].range
+                    this.plotOptions[key].autorange = true
+                }
+                if (getPanelForAxis(axis, this.state.plotCount) === this.panelIndex) {
+                    const localKey = getLayoutYAxis(getLocalAxis(axis, this.state.plotCount))
+                    if (range && Number.isFinite(range[0]) && Number.isFinite(range[1]) && range[0] < range[1]) {
+                        this.plotOptions[localKey].range = [range[0], range[1]]
+                        this.plotOptions[localKey].autorange = false
+                    } else {
+                        delete this.plotOptions[localKey].range
+                        this.plotOptions[localKey].autorange = true
+                    }
                 }
             }
         },
         resetAxis (index) {
             // Resets the Y axis so that the next plot autoranges
             // unfortunately the axis are named yaxis, yaxis2, yaxis3... and so on
-            let suffix = ''
-            suffix = index === 0 ? suffix : parseInt(index) + 1
-            const key = 'yaxis' + suffix
+            if (getPanelForAxis(index, this.state.plotCount) !== this.panelIndex) return
+            const key = getLayoutYAxis(getLocalAxis(index, this.state.plotCount))
             const obj = {}
             // Use older dict and set autorange to true
-            obj[key] = plotOptions[key]
+            obj[key] = this.plotOptions[key]
             obj[key].autorange = true
             Plotly.relayout(this.gd, obj)
         },
@@ -637,24 +721,10 @@ export default {
             // }
         },
         calculateXAxisDomain () {
-            let start = 0.02
-            let end = 0.98
-            for (const field of this.state.expressions) {
-                if (field.axis === 0) {
-                    start = Math.max(start, 0.03)
-                } else if (field.axis === 1) {
-                    start = Math.max(start, 0.07)
-                } else if (field.axis === 2) {
-                    start = Math.max(start, 0.11)
-                } else if (field.axis === 5) {
-                    end = Math.min(end, 0.96)
-                } else if (field.axis === 4) {
-                    end = Math.min(end, 0.92)
-                } else if (field.axis === 3) {
-                    end = Math.min(end, 0.88)
-                }
-            }
-            return [start, end]
+            const count = normalisePlotCount(this.state.plotCount)
+            if (count === 1) return [0.12, 0.88]
+            if (count === 2) return [0.12, 0.98]
+            return [0.08, 0.98]
         },
         getTimeAxisContext (traces) {
             const mode = this.state.plotTimeMode === 'world' && this.state.worldTimeAvailable ? 'world' : 'elapsed'
@@ -671,6 +741,48 @@ export default {
             return getPlotTimeAxis(
                 range, this.timeAxisContext, this.calculateXAxisDomain(), this.state.showRangeSlider
             )
+        },
+        configurePanelLayout (range) {
+            const count = normalisePlotCount(this.state.plotCount)
+            const xDomain = this.calculateXAxisDomain()
+            const axes = getAxesForPanel(this.panelIndex, count)
+            const axisLayouts = axes.map(axis => JSON.parse(JSON.stringify(this.plotOptions[getLayoutYAxis(axis)])))
+            this.plotOptions.xaxis = this.getTimeAxis(range)
+            this.plotOptions.xaxis.domain = xDomain
+            this.plotOptions.xaxis.anchor = 'y'
+            if (this.panelIndex !== 0) delete this.plotOptions.xaxis.rangeslider
+            if (range !== null) this.plotOptions.xaxis.range = range
+            for (const axis of this.state.allAxis) {
+                const key = getLayoutYAxis(axis)
+                this.plotOptions[key].visible = false
+            }
+            axisLayouts.forEach((yAxis, localAxis) => {
+                const key = getLayoutYAxis(localAxis)
+                this.plotOptions[key] = yAxis
+                yAxis.visible = true
+                yAxis.domain = [0, 1]
+                yAxis.side = localAxis >= 3 ? 'right' : 'left'
+                yAxis.automargin = false
+                if (localAxis === 0) {
+                    yAxis.anchor = 'free'
+                    delete yAxis.overlaying
+                    yAxis.position = yAxisPositions[localAxis]
+                } else {
+                    yAxis.anchor = 'free'
+                    yAxis.overlaying = 'y'
+                    yAxis.position = yAxisPositions[localAxis]
+                }
+            })
+        },
+        getXAxisRelayout (range) {
+            const axis = {
+                ...this.plotOptions.xaxis,
+                ...this.getTimeAxis(range),
+                range
+            }
+            if (this.panelIndex !== 0) delete axis.rangeslider
+            this.plotOptions.xaxis = axis
+            return { xaxis: axis }
         },
         getAnnotationSets () {
             return {
@@ -710,8 +822,13 @@ export default {
         },
         applyAnnotations () {
             if (!this.gd) return
+            if (this.panelIndex !== 0) {
+                Plotly.relayout(this.gd, { annotations: [], updatemenus: [] })
+                return
+            }
             Plotly.relayout(this.gd, {
-                annotations: combineAnnotationSets(this.getAnnotationSets(), this.state.annotationVisibility),
+                annotations: combineAnnotationSets(this.getAnnotationSets(), this.state.annotationVisibility)
+                    .map(annotation => ({ ...annotation, yref: 'paper', y: 0 })),
                 updatemenus: this.getAnnotationMenu()
             })
         },
@@ -727,6 +844,7 @@ export default {
             return Number.isFinite(start) && Number.isFinite(end) ? [start, end] : null
         },
         updateChildTimeAxes () {
+            if (this.panelIndex !== 0) return
             for (const child of this.state.childPlots) {
                 if (child && child.setPlotTimeAxis) child.setPlotTimeAxis(this.timeAxisContext)
             }
@@ -917,7 +1035,9 @@ export default {
                 return
             }
             this.state.plotLoading = true
-            plotOptions.title = this.state.file
+            if (this.panelIndex === 0) this.plotOptions.title = this.state.file
+            else delete this.plotOptions.title
+            this.plotOptions.margin.t = this.panelIndex === 0 ? 20 : 5
             const datasets = []
             const expressionTraceIndexes = []
             for (const message of this.unavailableMessages) {
@@ -925,7 +1045,7 @@ export default {
             }
             for (const axis of this.state.allAxis) {
                 const axisName = axis > 0 ? `yaxis${axis + 1}` : 'yaxis'
-                plotOptions[axisName].title = ''
+                this.plotOptions[axisName].title = ''
             }
             const entries = this.state.expressions.map((expression, index) => {
                 const [canPlot, error] = this.expressionCanBePlotted(expression, false)
@@ -959,14 +1079,23 @@ export default {
                 })
                 return
             }
+            const timeReferenceTraces = []
+            for (const entry of entries) {
+                if (!entry.canPlot) continue
+                const data = this.evaluateExpression(entry.expression.name)
+                if ('error' in data) {
+                    this.$set(this.state.expressionErrors, entry.index, data.error)
+                    entry.canPlot = false
+                    continue
+                }
+                entry.data = data
+                timeReferenceTraces.push(data)
+            }
             for (const entry of entries) {
                 if (!entry.canPlot) continue
                 const { expression, index } = entry
-                const data = this.evaluateExpression(expression.name)
-                if ('error' in data) {
-                    this.$set(this.state.expressionErrors, index, data.error)
-                    continue
-                }
+                if (getPanelForAxis(expression.axis, this.state.plotCount) !== this.panelIndex) continue
+                const data = entry.data
                 console.log(data)
                 const mode = data.isSwissCheese ? 'lines+markers' : 'lines'
 
@@ -993,7 +1122,10 @@ export default {
                     mode: mode,
                     x: data.x,
                     y: data.y,
-                    yaxis: 'y' + (expression.axis + 1),
+                    xaxis: 'x',
+                    yaxis: getLocalAxis(expression.axis, this.state.plotCount) === 0
+                        ? 'y'
+                        : `y${getLocalAxis(expression.axis, this.state.plotCount) + 1}`,
                     opacity: expression.opacity,
                     line: {
                         color: expression.color,
@@ -1006,20 +1138,20 @@ export default {
                 const axisname = expression.axis > 0 ? ('yaxis' + (expression.axis + 1)) : 'yaxis'
 
                 if (expression.axis <= 6) {
-                    plotOptions[axisname].title = {
+                    this.plotOptions[axisname].title = {
                         text: this.getAxisTitle(expression.axis),
                         font: {
                             color: expression.color
                         }
                     }
-                    plotOptions[axisname].tickfont.color = expression.color
+                    this.plotOptions[axisname].tickfont.color = expression.color
                     /* if (this.state.messageTypes[msgtype].complexFields[msgfield].units !== '?') {
-                         plotOptions[axisname].title.text +=
+                         this.plotOptions[axisname].title.text +=
                             ' (' + this.state.messageTypes[msgtype].complexFields[msgfield].units + ')'
                     } */
                 }
             }
-            this.timeAxisContext = this.getTimeAxisContext(datasets)
+            this.timeAxisContext = this.getTimeAxisContext(timeReferenceTraces)
             for (const trace of datasets) {
                 trace.customdata = getPlotHoverValues(trace.x, this.timeAxisContext)
                 trace.hovertemplate = getPlotHoverTemplate(this.timeAxisContext)
@@ -1038,17 +1170,16 @@ export default {
             const xRange = this.plotInstance !== null && this.gd && this.gd._fullLayout.xaxis.range
                 ? this.gd._fullLayout.xaxis.range
                 : this.getDataRange(datasets)
-            plotOptions.xaxis = this.getTimeAxis(xRange)
-            if (xRange !== null) plotOptions.xaxis.range = xRange
+            this.configurePanelLayout(xRange)
             if (this.plotInstance !== null) {
                 this.plotInstance = Plotly.newPlot(
-                    this.gd, plotData, plotOptions, { scrollZoom: true, responsive: true }
+                    this.gd, plotData, this.plotOptions, { scrollZoom: true, responsive: true }
                 )
             } else {
                 this.plotInstance = Plotly.newPlot(
                     this.gd,
                     plotData,
-                    plotOptions,
+                    this.plotOptions,
                     {
                         modeBarButtonsToAdd: [this.csvButton(), this.popupButton()],
                         scrollZoom: true,
@@ -1126,6 +1257,10 @@ export default {
             return Color(color).darken(0.2).string()
         },
         addModeShapes () {
+            if (this.panelIndex !== 0) {
+                Plotly.relayout(this.gd, { shapes: [] })
+                return
+            }
             const shapes = []
             const modeChanges = [...this.state.flightModeChanges]
             modeChanges.push([this.gd.layout.xaxis.range[1], null])
@@ -1291,14 +1426,11 @@ export default {
             if (this.zoomInterval !== null) {
                 clearTimeout(this.zoomInterval)
             }
-            this.updatChildrenTimeRange(this.state.timeRange)
+            if (this.panelIndex !== 0 && !this.state.syncPlotTime) return range
+            if (this.panelIndex === 0) this.updatChildrenTimeRange(this.state.timeRange)
+            if (this.gd && this.rangesMatch(this.gd.layout.xaxis.range, range)) return range
             this.zoomInterval = setTimeout(() => {
-                Plotly.relayout(this.gd, {
-                    xaxis: {
-                        range: range,
-                        ...this.getTimeAxis(range)
-                    }
-                })
+                this.applyTimeRange(range)
             }, 500)
             return range // make linter happy, it says this is a computed property(?)
         },
@@ -1320,6 +1452,12 @@ export default {
         },
         'state.showRangeSlider' () {
             this.plot()
+        },
+        'state.plotCount' () {
+            this.plot()
+        },
+        'state.syncPlotTime' (sync) {
+            if (sync) this.onPlotTimeRangeChanged({ source: -1, range: this.state.timeRange })
         }
     }
 }

@@ -72,7 +72,7 @@ export default {
                 trace.hovertemplate = getPlotHoverTemplate(context)
             }
             if (this.gd && this.plotInstance !== null) {
-                Plotly.relayout(this.gd, { xaxis: { ...this.getTimeAxis(this.gd.layout.xaxis.range) } })
+                Plotly.relayout(this.gd, this.getTimeAxisRelayout())
             }
         }
         window.setFlightModeChanges = (modes) => { this.flightModeChanges = modes }
@@ -131,6 +131,25 @@ export default {
             if (!this.timeAxisContext) return {}
             return getPlotTimeAxis(range, this.timeAxisContext, this.calculateXAxisDomain(), false)
         },
+        getPlotXAxisKeys () {
+            return Object.keys(this.plotOptions).filter(key => /^xaxis\d*$/.test(key))
+        },
+        getTimeAxisRelayout (range = null) {
+            const layout = {}
+            for (const key of this.getPlotXAxisKeys()) {
+                const currentAxis = this.gd.layout[key]
+                const xRange = range || currentAxis.range
+                const timeAxis = this.getTimeAxis(xRange)
+                layout[key] = {
+                    ...timeAxis,
+                    domain: currentAxis.domain,
+                    anchor: currentAxis.anchor,
+                    matches: currentAxis.matches,
+                    range: xRange
+                }
+            }
+            return layout
+        },
         getAnnotationMenu () {
             return [{
                 active: -1,
@@ -160,8 +179,12 @@ export default {
         },
         applyAnnotations () {
             if (!this.gd) return
+            const firstPanelBottom = this.gd.layout.yaxis && this.gd.layout.yaxis.domain
+                ? this.gd.layout.yaxis.domain[0]
+                : 0
             Plotly.relayout(this.gd, {
-                annotations: combineAnnotationSets(this.annotationSets, this.annotationVisibility),
+                annotations: combineAnnotationSets(this.annotationSets, this.annotationVisibility)
+                    .map(annotation => ({ ...annotation, yref: 'paper', y: firstPanelBottom })),
                 updatemenus: this.getAnnotationMenu()
             })
         },
@@ -253,28 +276,38 @@ export default {
         onRangeChanged (event) {
             if (event !== undefined) {
                 // this.$router.push({query: query})
-                if (event['xaxis.range']) {
-                    this.setTimeRange(event['xaxis.range'])
-                    this.$eventHub.$emit('child-zoomed', this.timeRange)
+                const range = this.getRelayoutXRange(event)
+                if (range) {
+                    this.setTimeRange(range)
+                    this.$eventHub.$emit('child-zoomed', range)
                 }
-                if (event['xaxis.range[0]']) {
-                    this.setTimeRange([event['xaxis.range[0]'], event['xaxis.range[1]']])
-                    this.$eventHub.$emit('child-zoomed', this.timeRange)
-                }
-                if (event['xaxis.autorange']) {
-                    this.setTimeRange([this.gd.layout.xaxis.range[0], this.gd.layout.xaxis.range[1]])
-                    this.$eventHub.$emit('child-zoomed', this.timeRange)
+                if (this.getPlotXAxisKeys().some(key => event[`${key}.autorange`])) {
+                    const autoRange = [this.gd.layout.xaxis.range[0], this.gd.layout.xaxis.range[1]]
+                    this.setTimeRange(autoRange)
+                    this.$eventHub.$emit('child-zoomed', autoRange)
                 }
             }
+        },
+        getRelayoutXRange (event) {
+            for (const key of this.getPlotXAxisKeys()) {
+                if (event[`${key}.range`]) return event[`${key}.range`]
+                if (Number.isFinite(event[`${key}.range[0]`]) && Number.isFinite(event[`${key}.range[1]`])) {
+                    return [event[`${key}.range[0]`], event[`${key}.range[1]`]]
+                }
+            }
+            return null
         },
         plot () {
             console.log('plot()')
             const start = new Date()
             this.plotOptions.showlegend = false
-            delete this.plotOptions.xaxis.rangeslider
-            this.plotOptions.xaxis = {
-                ...this.plotOptions.xaxis,
-                ...this.getTimeAxis(this.plotOptions.xaxis.range)
+            for (const key of this.getPlotXAxisKeys()) {
+                const axis = this.plotOptions[key]
+                this.plotOptions[key] = {
+                    ...this.getTimeAxis(axis.range),
+                    ...axis
+                }
+                delete this.plotOptions[key].rangeslider
             }
             this.plotOptions.updatemenus = this.getAnnotationMenu()
             if (this.plotInstance !== null) {
@@ -360,6 +393,9 @@ export default {
         addModeShapes () {
             const shapes = []
             const modeChanges = [...this.flightModeChanges]
+            const firstPanelDomain = this.gd.layout.yaxis && this.gd.layout.yaxis.domain
+                ? this.gd.layout.yaxis.domain
+                : [0, 1]
             modeChanges.push([this.gd.layout.xaxis.range[1], null])
 
             for (let i = 0; i < modeChanges.length - 1; i++) {
@@ -371,9 +407,9 @@ export default {
                         // y-reference is assigned to the plot paper [0,1]
                         yref: 'paper',
                         x0: modeChanges[i][0],
-                        y0: 0,
+                        y0: firstPanelDomain[0],
                         x1: modeChanges[i + 1][0],
-                        y1: 1,
+                        y1: firstPanelDomain[1],
                         fillcolor: this.getModeColor(modeChanges[i][0] + 1),
                         opacity: 0.15,
                         line: {
@@ -569,12 +605,7 @@ export default {
                 clearTimeout(this.zoomInterval)
             }
             this.zoomInterval = setTimeout(() => {
-                Plotly.relayout(this.gd, {
-                    xaxis: {
-                        range: range,
-                        ...this.getTimeAxis(range)
-                    }
-                })
+                Plotly.relayout(this.gd, this.getTimeAxisRelayout(range))
             }, 500)
             return range // make linter happy, it says this is a computed property(?)
         },

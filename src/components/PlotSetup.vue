@@ -98,6 +98,18 @@
       <small v-if="sharedPresetFolderName" class="shared-preset-folder">
         Shared presets: {{ sharedPresetFolderName }}
       </small>
+      <label class="plot-count-control">
+        Number of plots
+        <select v-model.number="state.plotCount">
+          <option :value="1">1</option>
+          <option :value="2">2</option>
+          <option :value="3">3</option>
+        </select>
+      </label>
+      <label class="plot-count-control">
+        Sync plot time
+        <input v-model="state.syncPlotTime" type="checkbox">
+      </label>
       <li class="type axis-limits-toggle">
         <div v-b-toggle.axislimitscontent>
           <a class="section">Axis limits <i class="expand fas fa-caret-down"></i></a>
@@ -239,7 +251,9 @@ export default {
                 const shared = await loadSharedPresets()
                 this.sharedPresetDirectory = shared.directory
                 this.sharedPresetFolderName = shared.permission ? shared.directory.name : ''
-                this.$eventHub.$emit('sharedPresetsChanged', shared.presets, shared.yAxisRanges, shared.yAxisLabels)
+                this.$eventHub.$emit(
+                    'sharedPresetsChanged', shared.presets, shared.yAxisRanges, shared.yAxisLabels, shared.plotCounts
+                )
             } catch (error) {
                 console.warn('Unable to load shared presets:', error)
             }
@@ -317,18 +331,21 @@ export default {
             const savedAxisLabels = JSON.parse(myStorage.getItem('savedAxisLabels')) || {}
             savedAxisLabels[name] = this.state.currentYAxisLabels
             myStorage.setItem('savedAxisLabels', JSON.stringify(savedAxisLabels))
+            const savedPlotCounts = JSON.parse(myStorage.getItem('savedPlotCounts')) || {}
+            savedPlotCounts[name] = this.state.plotCount
+            myStorage.setItem('savedPlotCounts', JSON.stringify(savedPlotCounts))
             this.$eventHub.$emit('presetsChanged')
             if (this.sharedPresetDirectory) {
                 try {
                     let result = await saveSharedPreset(
                         this.sharedPresetDirectory, name, this.state.expressions, false,
-                        this.state.currentYAxisRanges, this.state.currentYAxisLabels
+                        this.state.currentYAxisRanges, this.state.currentYAxisLabels, this.state.plotCount
                     )
                     if (result.exists &&
                         window.confirm(`"${name}" already exists in the shared preset folder. Overwrite it?`)) {
                         result = await saveSharedPreset(
                             this.sharedPresetDirectory, name, this.state.expressions, true,
-                            this.state.currentYAxisRanges, this.state.currentYAxisLabels
+                            this.state.currentYAxisRanges, this.state.currentYAxisLabels, this.state.plotCount
                         )
                     }
                     if (!result.exists) await this.refreshSharedPresets()
@@ -341,7 +358,8 @@ export default {
             const name = window.prompt('Preset file name', this.state.file || 'UAVLogViewer preset')
             if (!name || !name.trim()) return
             const preset = createPortablePreset(
-                name.trim(), this.state.expressions, this.state.currentYAxisRanges, this.state.currentYAxisLabels
+                name.trim(), this.state.expressions, this.state.currentYAxisRanges,
+                this.state.currentYAxisLabels, this.state.plotCount
             )
             const blob = new Blob([JSON.stringify(preset, null, 2) + '\n'], { type: 'application/json' })
             const link = document.createElement('a')
@@ -369,6 +387,9 @@ export default {
                     const savedAxisLabels = JSON.parse(window.localStorage.getItem('savedAxisLabels')) || {}
                     savedAxisLabels[preset.name] = preset.yAxisLabels
                     window.localStorage.setItem('savedAxisLabels', JSON.stringify(savedAxisLabels))
+                    const savedPlotCounts = JSON.parse(window.localStorage.getItem('savedPlotCounts')) || {}
+                    savedPlotCounts[preset.name] = preset.plotCount
+                    window.localStorage.setItem('savedPlotCounts', JSON.stringify(savedPlotCounts))
                     this.$eventHub.$emit('presetsChanged')
                     window.alert(`Imported preset: ${preset.name}`)
                 } catch (error) {
@@ -535,6 +556,14 @@ i {
 
 .axis-limits {
   padding: 4px 8px;
+}
+
+.plot-count-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 8px;
+  font-size: 12px;
 }
 
 .axis-limit-row {

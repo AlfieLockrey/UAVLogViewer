@@ -6,6 +6,7 @@ const opacityKey = 'opacity'
 const lineStyleKey = 'line_style'
 const visibleKey = 'visible'
 const yAxesKey = 'y_axes'
+const plotCountKey = 'plot_count'
 const axisLabelKey = 'label'
 const lineStyles = ['solid', 'dash', 'dot', 'dashdot']
 
@@ -88,9 +89,10 @@ const parseYAxisSettings = (axes, schemaVersion) => {
     return { ranges, labels }
 }
 
-export const createPortablePreset = (name, expressions, yAxisRanges = {}, yAxisLabels = {}) => ({
+export const createPortablePreset = (name, expressions, yAxisRanges = {}, yAxisLabels = {}, plotCount = 1) => ({
     [schemaKey]: PRESET_SCHEMA_VERSION,
     name,
+    [plotCountKey]: [1, 2, 3].includes(Number(plotCount)) ? Number(plotCount) : 1,
     plots: [{
         title: name,
         [yAxesKey]: normaliseYAxes(yAxisRanges, yAxisLabels),
@@ -124,6 +126,8 @@ export const parsePortablePreset = contents => {
         throw new Error('This version supports one plot containing a traces array.')
     }
     const schemaVersion = preset[schemaKey]
+    const plotCount = preset[plotCountKey] === undefined ? 1 : Number(preset[plotCountKey])
+    if (![1, 2, 3].includes(plotCount)) throw new Error('The preset has an invalid plot count.')
     const traces = preset.plots[0].traces.map((trace, index) => normaliseTrace(trace, index, schemaVersion))
     if (traces.length === 0) {
         throw new Error('The preset must contain at least one trace.')
@@ -134,6 +138,7 @@ export const parsePortablePreset = contents => {
         fields: traces.map(trace => [trace.expression, trace.axis, trace.color, trace.function,
             trace.seriesName, trace.opacity, trace.lineStyle, undefined, trace.visible]),
         yAxisRanges: yAxisSettings.ranges,
-        yAxisLabels: yAxisSettings.labels
+        yAxisLabels: yAxisSettings.labels,
+        plotCount
     }
 }

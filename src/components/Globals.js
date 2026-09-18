@@ -42,6 +42,8 @@ export const store = {
     mapError: null,
     plotTimeMode: 'elapsed',
     showRangeSlider: false,
+    plotCount: 1,
+    syncPlotTime: true,
     worldTimeAvailable: false,
     worldTimeStartMs: 0,
     worldTimeZone: '',

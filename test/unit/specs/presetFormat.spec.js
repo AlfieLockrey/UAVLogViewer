@@ -5,6 +5,7 @@ describe('portable presets', () => {
     const seriesNameKey = 'series_name'
     const legacyAxisLabelKey = 'axis_label'
     const visibleKey = 'visible'
+    const plotCountKey = 'plot_count'
     const expressions = [{
         name: '(GPS[0].Spd * 3.6) / (BAT[0].Volt * BAT[0].Curr / 1000)',
         axis: 0,
@@ -21,7 +22,7 @@ describe('portable presets', () => {
             0: [0, 100]
         }, {
             0: 'Efficiency (km/kWh)'
-        })))
+        }, 3)))
 
         expect(result).toEqual({
             name: 'Attitude',
@@ -37,7 +38,8 @@ describe('portable presets', () => {
                 false
             ]],
             yAxisRanges: { 0: [0, 100] },
-            yAxisLabels: { 0: 'Efficiency (km/kWh)' }
+            yAxisLabels: { 0: 'Efficiency (km/kWh)' },
+            plotCount: 3
         })
         expect(createPortablePreset('Attitude', [{ ...expressions[0], isolated: true }]))
             .not.toHaveProperty('plots.0.traces.0.isolated')
@@ -53,6 +55,7 @@ describe('portable presets', () => {
         expect(result.fields).toEqual([['ATT.Roll', 0, undefined, 1, 'Roll angle', 1, 'solid', undefined, true]])
         expect(result.yAxisRanges).toEqual({})
         expect(result.yAxisLabels).toEqual({})
+        expect(result.plotCount).toBe(1)
     })
 
     it('rejects a non-string series name', () => {
@@ -69,6 +72,15 @@ describe('portable presets', () => {
             name: 'Invalid',
             plots: [{ traces: [{ expression: 'ATT.Roll', axis: 0, [visibleKey]: 'false' }] }]
         }))).toThrow('invalid visibility setting')
+    })
+
+    it('rejects an invalid plot count', () => {
+        expect(() => parsePortablePreset(JSON.stringify({
+            [schemaVersionKey]: 2,
+            name: 'Invalid',
+            [plotCountKey]: 4,
+            plots: [{ traces: [{ expression: 'ATT.Roll', axis: 0 }] }]
+        }))).toThrow('invalid plot count')
     })
 
     it('rejects unversioned preset data', () => {
