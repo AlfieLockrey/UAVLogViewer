@@ -568,7 +568,12 @@ export default {
             if (!layout) return
             const ranges = { ...this.state.currentYAxisRanges }
             for (const axis of this.state.allAxis) {
-                if (!this.state.expressions.some(field => field.axis === axis) && !ranges[axis]) continue
+                const hasVisibleExpression = this.state.expressions.some(
+                    field => field.visible !== false && field.axis === axis
+                )
+                if (!hasVisibleExpression && !ranges[axis]) {
+                    continue
+                }
                 const key = axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
                 const eventRange = event && event[`${key}.range`]
                 const eventLower = event && event[`${key}.range[0]`]
@@ -727,7 +732,8 @@ export default {
             }
         },
         getAxisTitle (fieldAxis) {
-            return getAxisTitle(this.state.expressions, fieldAxis, this.state.currentYAxisLabels)
+            const visibleExpressions = this.state.expressions.filter(field => field.visible !== false)
+            return getAxisTitle(visibleExpressions, fieldAxis, this.state.currentYAxisLabels)
         },
         findMessagesInExpression (expression) {
             const RE = /(?<message>[A-Z][A-Z0-9_]+(\[[A-Za-z0-9_.%]+\])?)(\.(?<field>[A-Za-z0-9_]+))?/g
@@ -928,7 +934,7 @@ export default {
                 return {
                     expression,
                     index,
-                    canPlot: canPlot && unavailable === undefined,
+                    canPlot: expression.visible !== false && canPlot && unavailable === undefined,
                     error: unavailable === undefined ? error : `Could not load message: ${unavailable}`,
                     messages
                 }
@@ -988,7 +994,7 @@ export default {
                     x: data.x,
                     y: data.y,
                     yaxis: 'y' + (expression.axis + 1),
-                    opacity: expression.visible === false ? 0 : expression.opacity,
+                    opacity: expression.opacity,
                     line: {
                         color: expression.color,
                         dash: expression.lineStyle,
