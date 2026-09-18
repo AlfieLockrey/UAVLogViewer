@@ -23,13 +23,13 @@
             <main class="col-md-9 ml-sm-auto col-lg-10 flex-column d-sm-flex" role="main">
 
                 <div class="row"
-                     v-bind:class="[state.showMap ? 'h-50' : 'h-100']"
+                     v-bind:class="[state.showMap ? 'plot-with-map' : 'h-100']"
                      v-if="state.plotOn">
                     <div class="col-12">
                         <Plotly/>
                     </div>
                 </div>
-                <div class="row" v-bind:class="[state.plotOn ? 'h-50' : 'h-100']"
+                <div class="row" v-bind:class="[state.plotOn ? 'map-with-plot' : 'h-100']"
                      v-if="state.showMap">
                     <div class="col-12 noPadding">
                         <CesiumViewer v-if="state.mapAvailable && mapOk && !state.mapError" ref="cesiumViewer"/>
@@ -356,6 +356,14 @@ export default {
         padding-left: 4px;
         padding-right: 6px;
         max-height: 100%;
+    }
+
+    .plot-with-map {
+        height: 66.666667% !important;
+    }
+
+    .map-with-plot {
+        height: 33.333333% !important;
     }
 
     div #waiting {

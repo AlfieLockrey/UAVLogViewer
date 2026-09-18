@@ -45,7 +45,7 @@ export const store = {
     namedFloats: [],
     metadata: null,
     // cesium menu:
-    modelScale: 1.0,
+    modelScale: 50,
     heightOffset: 0.0,
     showClickableTrajectory: false,
     showTrajectory: true,

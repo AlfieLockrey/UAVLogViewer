@@ -241,6 +241,7 @@ export default {
                     )
                     this.viewer.scene.globe.translucency.enabled = true
                     this.viewer.scene.screenSpaceCameraController.enableCollisionDetection = false
+                    this.updateZoomSensitivity()
                     this.viewer.scene.globe.undergroundColor = Color.MIDNIGHTBLUE
                     this.viewer.scene.globe.undergroundColorAlphaByDistance.near = 2
                     this.viewer.scene.globe.undergroundColorAlphaByDistance.far = 10
@@ -437,15 +438,15 @@ export default {
 
                 // TODO: Find a better way to know that cesium finished loading
                 setTimeout(() => { this.state.mapLoading = false }, 2000)
-                // Default to a framed top-down view of the flight (not vehicle-follow, which
-                // frames a point and ends up too wide to find the flight). Follow is available
-                // via the centre-vehicle button.
-                this.state.cameraType = 'free'
+                this.state.cameraType = 'follow'
                 this.changeCamera()
                 setTimeout(this.updateTimelineColors, 500)
                 setInterval(this.updateGlobeOpacity, 1000)
                 setTimeout(() => {
-                    this.fitTrajectoryBounds()
+                    this.viewer.trackedEntity = undefined
+                    this.viewer.flyTo(this.model, { offset: new HeadingPitchRange(0, -0.5, 100) }).then(() => {
+                        if (this.cameraType === 'follow') this.changeCamera()
+                    })
                 }, 1000)
             } catch (e) {
                 console.error('Error in Cesium setup2:', e)
@@ -676,6 +677,12 @@ export default {
             } else {
                 this.viewer.trackedEntity = undefined
             }
+        },
+        updateZoomSensitivity () {
+            if (!this.viewer) return
+            // Cesium calculates wheel zoom distance from this factor. Halving it keeps
+            // wheel movement proportional when the map is reduced to one third of the view.
+            this.viewer.scene.screenSpaceCameraController._zoomFactor = this.state.plotOn ? 2.5 : 5
         },
         fitTrajectoryBounds () {
             // Frame the flight so it fills ~2/3 of the view, never zooming tighter than a ~100 m
@@ -1842,6 +1849,9 @@ export default {
         },
         cameraType () {
             this.changeCamera()
+        },
+        'state.plotOn' () {
+            this.updateZoomSensitivity()
         },
         showTrajectory () {
             this.updateAndPlotTrajectory()
