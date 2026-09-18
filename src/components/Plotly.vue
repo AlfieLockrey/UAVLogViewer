@@ -12,49 +12,18 @@ import { isNumber } from 'underscore'
 import { getAxisTitle, getTraceLabel } from '../tools/plotLabels.js'
 import { getElapsedOrigin, getPlotHoverTemplate, getPlotHoverValues, getPlotTimeAxis } from '../tools/plotTimeAxis.js'
 import { getPlotStatistics } from '../tools/plotStatistics.js'
+import {
+    annotationSources, combineAnnotationSets, createTextMessageAnnotations
+} from '../tools/plotAnnotations.js'
 
 const Color = require('color')
 
 const timeformat = ':02,2f'
 let annotationsEvents = []
-const annotationsModes = []
+let annotationsModes = []
 let annotationsParams = []
-
-const updatemenus = [
-    {
-        active: 0,
-        buttons: [
-            {
-                args: ['annotations', annotationsModes],
-                label: 'Nothing',
-                method: 'relayout'
-            },
-            {
-                args: ['annotations', [...annotationsEvents, ...annotationsModes]],
-                label: 'Events',
-                method: 'relayout'
-            },
-            {
-                args: ['annotations', [...annotationsModes, ...annotationsParams]],
-                label: 'Params',
-                method: 'relayout'
-            },
-            {
-                args: ['annotations', [...annotationsEvents, ...annotationsModes, ...annotationsParams]],
-                label: 'Events + Params',
-                method: 'relayout'
-            }
-        ],
-        direction: 'left',
-        pad: { r: 10, t: 10 },
-        showactive: true,
-        type: 'buttons',
-        x: 0.1,
-        xanchor: 'left',
-        y: 1.2,
-        yanchor: 'top'
-    }
-]
+let annotationsMsg = []
+let annotationsStatusText = []
 
 const plotOptions = {
     legend: {
@@ -274,6 +243,7 @@ export default {
                             newWindow.setPlotTimeAxis(this.timeAxisContext)
                             newWindow.setCssColors(this.state.cssColors)
                             newWindow.setFlightModeChanges(this.state.flightModeChanges)
+                            newWindow.setAnnotationData(this.getAnnotationSets())
                             console.log(this.$eventHub)
                             newWindow.setEventHub(this.$eventHub)
                             newWindow.plot()
@@ -697,6 +667,49 @@ export default {
                 range, this.timeAxisContext, this.calculateXAxisDomain(), this.state.showRangeSlider
             )
         },
+        getAnnotationSets () {
+            return {
+                events: annotationsEvents,
+                params: annotationsParams,
+                msg: annotationsMsg,
+                statusText: annotationsStatusText,
+                modes: annotationsModes
+            }
+        },
+        getAnnotationMenu () {
+            return [{
+                active: -1,
+                buttons: annotationSources.map(source => ({
+                    args: [source],
+                    label: `${this.state.annotationVisibility[source] ? '[x]' : '[ ]'} ${this.annotationLabel(source)}`,
+                    method: 'skip'
+                })),
+                direction: 'right',
+                pad: { r: 10, t: 10 },
+                showactive: false,
+                type: 'buttons',
+                x: 0.1,
+                xanchor: 'left',
+                y: 1.2,
+                yanchor: 'top'
+            }]
+        },
+        annotationLabel (source) {
+            return { events: 'Events', params: 'Params', msg: 'MSG', statusText: 'STATUSTEXT' }[source]
+        },
+        onAnnotationButtonClicked (event) {
+            const source = event.button && event.button.args && event.button.args[0]
+            if (!annotationSources.includes(source)) return
+            this.state.annotationVisibility[source] = !this.state.annotationVisibility[source]
+            this.applyAnnotations()
+        },
+        applyAnnotations () {
+            if (!this.gd) return
+            Plotly.relayout(this.gd, {
+                annotations: combineAnnotationSets(this.getAnnotationSets(), this.state.annotationVisibility),
+                updatemenus: this.getAnnotationMenu()
+            })
+        },
         getDataRange (traces) {
             let start = Infinity
             let end = -Infinity
@@ -1064,11 +1077,13 @@ export default {
             this.gd.on('plotly_hover', (data) => {
                 this.$eventHub.$emit('hoveredTime', data.points[0].x)
             })
+            this.gd.on('plotly_buttonclicked', this.onAnnotationButtonClicked)
             this.updateExpressionStats()
 
             this.addModeShapes()
             this.addEvents()
             this.addParamChanges()
+            this.addTextMessageAnnotations()
 
             if (generation === this.plotGeneration) this.state.plotLoading = false
             this.updateChildTimeAxes()
@@ -1135,6 +1150,7 @@ export default {
         },
         addEvents () {
             annotationsEvents = []
+            annotationsModes = []
             let i = -300
             for (const event of this.state.events) {
                 annotationsEvents.push(
@@ -1178,15 +1194,7 @@ export default {
                     }
                 )
             }
-            Plotly.relayout(this.gd, {
-                annotations: annotationsModes,
-                updatemenus: updatemenus
-            })
-            updatemenus[0].buttons[0].args = ['annotations', annotationsModes]
-            updatemenus[0].buttons[1].args = ['annotations', [...annotationsEvents, ...annotationsModes]]
-            updatemenus[0].buttons[2].args = ['annotations', [...annotationsModes, ...annotationsParams]]
-            updatemenus[0].buttons[3].args = ['annotations', [...annotationsEvents, ...annotationsModes,
-                ...annotationsParams]]
+            this.applyAnnotations()
         },
         addParamChanges () {
             if (!this.state.params) {
@@ -1238,31 +1246,12 @@ export default {
                     i = -300
                 }
             }
-            updatemenus[0].active = 0
-            Plotly.relayout(this.gd, {
-                annotations:
-                [
-                    ...annotationsModes
-                ],
-                updatemenus: updatemenus
-            })
-            updatemenus[0].buttons[2].args =
-            [
-                'annotations',
-                [
-                    ...annotationsModes,
-                    ...annotationsParams
-                ]
-            ]
-            updatemenus[0].buttons[3].args =
-            [
-                'annotations',
-                [
-                    ...annotationsEvents,
-                    ...annotationsModes,
-                    ...annotationsParams
-                ]
-            ]
+            this.applyAnnotations()
+        },
+        addTextMessageAnnotations () {
+            annotationsMsg = createTextMessageAnnotations(this.state.textMessages, 'MSG')
+            annotationsStatusText = createTextMessageAnnotations(this.state.textMessages, 'STATUSTEXT')
+            this.applyAnnotations()
         },
         loadedMessages () {
             return Object.keys(this.state.messages)

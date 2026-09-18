@@ -9,6 +9,7 @@ import Plotly from 'plotly.js'
 import { store } from './Globals.js'
 import * as d3 from 'd3'
 import { getPlotHoverTemplate, getPlotHoverValues, getPlotTimeAxis } from '../tools/plotTimeAxis.js'
+import { annotationSources, combineAnnotationSets, emptyAnnotationSets } from '../tools/plotAnnotations.js'
 
 const Color = require('color')
 
@@ -75,6 +76,7 @@ export default {
             }
         }
         window.setFlightModeChanges = (modes) => { this.flightModeChanges = modes }
+        window.setAnnotationData = (sets) => { this.annotationSets = { ...emptyAnnotationSets(), ...sets } }
         window.setCssColors = (colors) => { this.cssColors = colors }
         window.setTimeRange = (timeRange) => { this.setTimeRange(timeRange) }
         window.setEventHub = (eventHub) => {
@@ -111,7 +113,14 @@ export default {
             externalTimeRange: null,
             $eventHub: null,
             cursor: null,
-            timeAxisContext: null
+            timeAxisContext: null,
+            annotationSets: emptyAnnotationSets(),
+            annotationVisibility: {
+                events: false,
+                params: false,
+                msg: false,
+                statusText: false
+            }
         }
     },
     methods: {
@@ -121,6 +130,40 @@ export default {
         getTimeAxis (range) {
             if (!this.timeAxisContext) return {}
             return getPlotTimeAxis(range, this.timeAxisContext, this.calculateXAxisDomain(), false)
+        },
+        getAnnotationMenu () {
+            return [{
+                active: -1,
+                buttons: annotationSources.map(source => ({
+                    args: [source],
+                    label: `${this.annotationVisibility[source] ? '[x]' : '[ ]'} ${this.annotationLabel(source)}`,
+                    method: 'skip'
+                })),
+                direction: 'right',
+                pad: { r: 10, t: 10 },
+                showactive: false,
+                type: 'buttons',
+                x: 0.1,
+                xanchor: 'left',
+                y: 1.2,
+                yanchor: 'top'
+            }]
+        },
+        annotationLabel (source) {
+            return { events: 'Events', params: 'Params', msg: 'MSG', statusText: 'STATUSTEXT' }[source]
+        },
+        onAnnotationButtonClicked (event) {
+            const source = event.button && event.button.args && event.button.args[0]
+            if (!annotationSources.includes(source)) return
+            this.annotationVisibility[source] = !this.annotationVisibility[source]
+            this.applyAnnotations()
+        },
+        applyAnnotations () {
+            if (!this.gd) return
+            Plotly.relayout(this.gd, {
+                annotations: combineAnnotationSets(this.annotationSets, this.annotationVisibility),
+                updatemenus: this.getAnnotationMenu()
+            })
         },
         csvButton () {
             return {
@@ -233,6 +276,7 @@ export default {
                 ...this.plotOptions.xaxis,
                 ...this.getTimeAxis(this.plotOptions.xaxis.range)
             }
+            this.plotOptions.updatemenus = this.getAnnotationMenu()
             if (this.plotInstance !== null) {
                 this.plotOptions.xaxis.range = this.gd._fullLayout.xaxis.range
                 Plotly.newPlot(this.gd, this.plotData, this.plotOptions, { scrollZoom: true, responsive: true })
@@ -258,10 +302,10 @@ export default {
                 this.$eventHub.$emit('hoveredTime', infotext[0])
                 this.setCursorTime(infotext[0])
             })
+            this.gd.on('plotly_buttonclicked', this.onAnnotationButtonClicked)
 
             this.addModeShapes()
-            this.addEvents()
-            // this.addParamChanges()
+            this.applyAnnotations()
 
             this.state.plotLoading = false
 

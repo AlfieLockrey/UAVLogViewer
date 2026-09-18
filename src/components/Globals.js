@@ -19,6 +19,12 @@ export const store = {
     flightModeChanges: [],
     file: null,
     events: [],
+    annotationVisibility: {
+        events: false,
+        params: false,
+        msg: false,
+        statusText: false
+    },
     cssColors: [],
     colors: [],
     mapAvailable: false,

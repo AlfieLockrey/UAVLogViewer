@@ -65,13 +65,13 @@ export class DjiDataExtractor {
         if ('STATUSTEXT' in messages) {
             const textMsgs = messages.STATUSTEXT
             for (const i in textMsgs.time_boot_ms) {
-                texts.push([textMsgs.time_boot_ms[i], textMsgs.severity[i], textMsgs.text[i]])
+                texts.push([textMsgs.time_boot_ms[i], textMsgs.severity[i], textMsgs.text[i], 'STATUSTEXT'])
             }
         }
         if ('MSG' in messages) {
             const textMsgs = messages.MSG
             for (const i in textMsgs.time_boot_ms) {
-                texts.push([textMsgs.time_boot_ms[i], 0, textMsgs.Message[i]])
+                texts.push([textMsgs.time_boot_ms[i], 0, textMsgs.Message[i], 'MSG'])
             }
         }
         return texts

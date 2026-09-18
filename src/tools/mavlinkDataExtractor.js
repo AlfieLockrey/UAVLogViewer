@@ -310,7 +310,7 @@ export class MavlinkDataExtractor {
         if ('STATUSTEXT' in messages) {
             const textMsgs = messages.STATUSTEXT
             for (const i in textMsgs.time_boot_ms) {
-                texts.push([textMsgs.time_boot_ms[i], textMsgs.severity[i], textMsgs.text[i]])
+                texts.push([textMsgs.time_boot_ms[i], textMsgs.severity[i], textMsgs.text[i], 'STATUSTEXT'])
             }
         }
         return texts
