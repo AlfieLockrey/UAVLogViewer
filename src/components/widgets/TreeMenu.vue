@@ -86,18 +86,19 @@ export default {
             this.$eventHub.$emit('presetsChanged')
         },
         openPreset (preset, presetName) {
-            this.$eventHub.$emit('clearPlot')
             const savedAxisRanges = JSON.parse(window.localStorage.getItem('savedAxisRanges')) || {}
             const sharedAxisRanges = JSON.parse(window.localStorage.getItem('sharedAxisRanges')) || {}
             const isShared = preset[0] && preset[0][7] === 'shared'
-            this.$eventHub.$emit('setPresetYAxisRanges',
-                (isShared ? sharedAxisRanges : savedAxisRanges)[presetName] || null, true)
+            const yAxisRanges = (isShared ? sharedAxisRanges : savedAxisRanges)[presetName] || null
+            const msgs = preset.map(msg =>
+                [msg[0], msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8]]
+            )
             this.state.plotOn = true
             this.$nextTick(function () {
-                const msgs = []
-                for (const msg of preset) {
-                    msgs.push([msg[0], msg[1], msg[2], msg[3], msg[4], msg[5], msg[6], msg[7], msg[8]])
-                }
+                // Plotly is not mounted until plotOn becomes true on a fresh
+                // log, so all preset events must be emitted after that tick.
+                this.$eventHub.$emit('clearPlot')
+                this.$eventHub.$emit('setPresetYAxisRanges', yAxisRanges, true)
                 this.$eventHub.$emit('addPlots', msgs)
             })
         }

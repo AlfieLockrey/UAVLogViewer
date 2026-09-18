@@ -34,6 +34,11 @@ const updatemenus = [
                 method: 'relayout'
             },
             {
+                args: ['annotations', [...annotationsModes, ...annotationsParams]],
+                label: 'Params',
+                method: 'relayout'
+            },
+            {
                 args: ['annotations', [...annotationsEvents, ...annotationsModes, ...annotationsParams]],
                 label: 'Events + Params',
                 method: 'relayout'
@@ -216,6 +221,7 @@ export default {
         this.$eventHub.$off('togglePlot')
         this.$eventHub.$off('clearPlot')
         this.$eventHub.$off('setPresetYAxisRanges')
+        if (this.legendUpdateTimer !== null) clearTimeout(this.legendUpdateTimer)
         clearInterval(this.interval)
     },
     data () {
@@ -226,9 +232,9 @@ export default {
             timeAxisContext: null,
             waitingForMessages: false,
             unavailableMessages: new Set(),
-            plotHandlersAttached: false,
             loadingPresetYAxisRanges: false,
-            plotGeneration: 0
+            plotGeneration: 0,
+            legendUpdateTimer: null
         }
     },
     methods: {
@@ -379,7 +385,11 @@ export default {
             })
         },
         onRangeChanged (event) {
-            this.addMaxMinMeanToTitles()
+            const eventXRange = event && (event['xaxis.range'] ||
+                (Number.isFinite(event['xaxis.range[0]']) && Number.isFinite(event['xaxis.range[1]'])
+                    ? [event['xaxis.range[0]'], event['xaxis.range[1]']]
+                    : null))
+            this.scheduleLegendStatsUpdate(eventXRange)
             // The relayout payload is the exact range produced by a drag or
             // scroll gesture.  Prefer it over a later layout read so the axis
             // limits controls follow the plot without accumulating tiny
@@ -391,7 +401,7 @@ export default {
                     this.state.timeRange = event['xaxis.range']
                     this.updatChildrenTimeRange(this.state.timeRange)
                 }
-                if (event['xaxis.range[0]']) {
+                if (Number.isFinite(event['xaxis.range[0]']) && Number.isFinite(event['xaxis.range[1]'])) {
                     this.state.timeRange = [event['xaxis.range[0]'], event['xaxis.range[1]']]
                     this.updatChildrenTimeRange(this.state.timeRange)
                 }
@@ -400,6 +410,15 @@ export default {
                     this.updatChildrenTimeRange(this.state.timeRange)
                 }
             }
+        },
+        scheduleLegendStatsUpdate (eventRange) {
+            if (this.legendUpdateTimer !== null) clearTimeout(this.legendUpdateTimer)
+            this.legendUpdateTimer = setTimeout(() => {
+                this.legendUpdateTimer = null
+                const layout = this.gd && (this.gd._fullLayout || this.gd.layout)
+                const finalRange = layout && layout.xaxis && layout.xaxis.range
+                this.addMaxMinMeanToTitles(finalRange || eventRange)
+            }, 0)
         },
 
         onTimeRangeChanged (timeRange) {
@@ -413,9 +432,9 @@ export default {
                 child.setTimeRange(timeRange)
             }
         },
-        addMaxMinMeanToTitles   () {
+        addMaxMinMeanToTitles (range) {
             const gd = this.gd
-            const xRange = gd.layout.xaxis.range
+            const xRange = range || gd.layout.xaxis.range
 
             const changedTraceIndices = []
             const changedTraceNames = []
@@ -452,7 +471,7 @@ export default {
                 // Re-layouting the complete layout here made Plotly recalculate
                 // axes after a wheel zoom.  Updating only the changed trace
                 // labels keeps the current axis ranges intact.
-                Plotly.restyle(this.gd, { name: changedTraceNames }, changedTraceIndices)
+                Plotly.restyle(this.gd, 'name', changedTraceNames, changedTraceIndices)
             }
         },
         isPlotted (fieldname) {
@@ -1038,13 +1057,12 @@ export default {
                 }
             })
             start = new Date()
-            if (!this.plotHandlersAttached) {
-                this.gd.on('plotly_relayout', this.onRangeChanged)
-                this.gd.on('plotly_hover', (data) => {
-                    this.$eventHub.$emit('hoveredTime', data.points[0].x)
-                })
-                this.plotHandlersAttached = true
-            }
+            // Plotly.newPlot() purges every listener on the graph div, so these
+            // handlers must be attached again after every plot recreation.
+            this.gd.on('plotly_relayout', this.onRangeChanged)
+            this.gd.on('plotly_hover', (data) => {
+                this.$eventHub.$emit('hoveredTime', data.points[0].x)
+            })
             this.addMaxMinMeanToTitles()
 
             this.addModeShapes()
@@ -1183,7 +1201,8 @@ export default {
             })
             updatemenus[0].buttons[0].args = ['annotations', annotationsModes]
             updatemenus[0].buttons[1].args = ['annotations', [...annotationsEvents, ...annotationsModes]]
-            updatemenus[0].buttons[2].args = ['annotations', [...annotationsEvents, ...annotationsModes,
+            updatemenus[0].buttons[2].args = ['annotations', [...annotationsModes, ...annotationsParams]]
+            updatemenus[0].buttons[3].args = ['annotations', [...annotationsEvents, ...annotationsModes,
                 ...annotationsParams]]
         },
         addParamChanges () {
@@ -1245,6 +1264,14 @@ export default {
                 updatemenus: updatemenus
             })
             updatemenus[0].buttons[2].args =
+            [
+                'annotations',
+                [
+                    ...annotationsModes,
+                    ...annotationsParams
+                ]
+            ]
+            updatemenus[0].buttons[3].args =
             [
                 'annotations',
                 [

@@ -31,6 +31,11 @@ const updatemenus = [
                 method: 'relayout'
             },
             {
+                args: ['annotations', [...annotationsModes, ...annotationsParams]],
+                label: 'Params',
+                method: 'relayout'
+            },
+            {
                 args: ['annotations', [...annotationsEvents, ...annotationsModes, ...annotationsParams]],
                 label: 'Events + Params',
                 method: 'relayout'
@@ -443,7 +448,8 @@ export default {
             })
             updatemenus[0].buttons[0].args = ['annotations', annotationsModes]
             updatemenus[0].buttons[1].args = ['annotations', [...annotationsEvents, ...annotationsModes]]
-            updatemenus[0].buttons[2].args = ['annotations', [...annotationsEvents, ...annotationsModes,
+            updatemenus[0].buttons[2].args = ['annotations', [...annotationsModes, ...annotationsParams]]
+            updatemenus[0].buttons[3].args = ['annotations', [...annotationsEvents, ...annotationsModes,
                 ...annotationsParams]]
         },
         addParamChanges () {
@@ -502,6 +508,14 @@ export default {
                 updatemenus: updatemenus
             })
             updatemenus[0].buttons[2].args =
+            [
+                'annotations',
+                [
+                    ...annotationsModes,
+                    ...annotationsParams
+                ]
+            ]
+            updatemenus[0].buttons[3].args =
             [
                 'annotations',
                 [
