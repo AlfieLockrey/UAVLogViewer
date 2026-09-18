@@ -28,8 +28,8 @@
                             {{nodeName}}
                         </a>
                         <!-- TODO: remove this hacky check when presets use a better data sctructure -->
-                        <a @click="deletePreset(name+nodeName)"
-                            v-if="newNode[Object.keys(newNode)[0]][0][7] === 'local'">
+                        <a @click="deletePreset(name+nodeName, newNode[Object.keys(newNode)[0]][0][7])"
+                            v-if="['local', 'shared'].includes(newNode[Object.keys(newNode)[0]][0][7])">
                             <i class="remove-icon fas fa-trash" title="Delete preset"></i>
                         </a>
 
@@ -44,6 +44,7 @@
 
 <script>
 import { store } from '../Globals.js'
+import { deleteSharedPreset } from '../../tools/sharedPresets.js'
 
 export default {
     props: {
@@ -69,24 +70,32 @@ export default {
         cleanNodeName (name) {
             return name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
         },
-        deletePreset (preset) {
-            const text = `Are you sure you want to delete the preset "${preset}"?`
+        async deletePreset (preset, source) {
+            const text = `Delete preset "${preset}"? This also permanently deletes its matching file ` +
+                'from the shared preset folder, if present.'
             if (confirm(text) === false) {
                 return
             }
-            const myStorage = window.localStorage
-            let saved = myStorage.getItem('savedFields')
-            if (saved === null) {
+            try {
+                await deleteSharedPreset(preset)
+            } catch (error) {
+                window.alert(`The shared preset file was not deleted: ${error.message}`)
                 return
-            } else {
-                saved = JSON.parse(saved)
             }
-            delete saved[preset]
-            myStorage.setItem('savedFields', JSON.stringify(saved))
-            const savedAxisLabels = JSON.parse(myStorage.getItem('savedAxisLabels')) || {}
-            delete savedAxisLabels[preset]
-            myStorage.setItem('savedAxisLabels', JSON.stringify(savedAxisLabels))
+            const myStorage = window.localStorage
+            const saved = JSON.parse(myStorage.getItem('savedFields')) || {}
+            if (source === 'local') {
+                delete saved[preset]
+                myStorage.setItem('savedFields', JSON.stringify(saved))
+                const savedAxisLabels = JSON.parse(myStorage.getItem('savedAxisLabels')) || {}
+                delete savedAxisLabels[preset]
+                myStorage.setItem('savedAxisLabels', JSON.stringify(savedAxisLabels))
+                const savedAxisRanges = JSON.parse(myStorage.getItem('savedAxisRanges')) || {}
+                delete savedAxisRanges[preset]
+                myStorage.setItem('savedAxisRanges', JSON.stringify(savedAxisRanges))
+            }
             this.$eventHub.$emit('presetsChanged')
+            this.$eventHub.$emit('sharedPresetDeleted')
         },
         openPreset (preset, presetName) {
             const savedAxisRanges = JSON.parse(window.localStorage.getItem('savedAxisRanges')) || {}

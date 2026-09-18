@@ -130,3 +130,20 @@ export const saveSharedPreset = async (
     ) + '\n')
     return { exists: false }
 }
+
+export const deleteSharedPreset = async name => {
+    const directory = await getDirectory()
+    if (!directory) return { deleted: false, available: false }
+    if (!await hasPermission(directory, 'readwrite')) {
+        throw new Error('The shared preset folder is no longer available. Choose it again in Plot Setup.')
+    }
+
+    const filename = filenameFor(name)
+    try {
+        await directory.getFileHandle(filename)
+    } catch (error) {
+        return { deleted: false, available: true }
+    }
+    await directory.removeEntry(filename)
+    return { deleted: true, available: true }
+}

@@ -69,6 +69,13 @@ import { loadSharedPresets } from '../tools/sharedPresets.js'
 import TreeMenu from './widgets/TreeMenu.vue'
 import fastXmlParser from 'fast-xml-parser'
 
+const sortPresets = presets => Object.keys(presets || {})
+    .sort((first, second) => first.localeCompare(second, undefined, { sensitivity: 'base' }))
+    .reduce((sorted, name) => {
+        sorted[name] = presets[name]
+        return sorted
+    }, {})
+
 export default {
     name: 'message-menu',
     components: { TreeMenu },
@@ -103,18 +110,20 @@ export default {
         this.$eventHub.$on('messageTypes', this.handleMessageTypes)
         this.$eventHub.$on('presetsChanged', this.loadLocalPresets)
         this.$eventHub.$on('sharedPresetsChanged', this.setSharedPresets)
+        this.$eventHub.$on('sharedPresetDeleted', this.loadSharedPresets)
         this.messageDocs = this.loadXmlDocs()
         this.loadLocalPresets()
         this.loadSharedPresets()
     },
     beforeDestroy () {
         this.$eventHub.$off('messageTypes')
+        this.$eventHub.$off('sharedPresetDeleted')
     },
     methods: {
         loadLocalPresets () {
             const saved = window.localStorage.getItem('savedFields')
             if (saved !== null) {
-                this.userPresets = JSON.parse(saved)
+                this.userPresets = sortPresets(JSON.parse(saved))
                 for (const preset in this.userPresets) {
                     for (const message in this.userPresets[preset]) {
                         this.userPresets[preset][message][7] = 'local'
@@ -131,7 +140,7 @@ export default {
             }
         },
         setSharedPresets (presets, yAxisRanges = {}, yAxisLabels = {}) {
-            this.sharedPresets = presets
+            this.sharedPresets = sortPresets(presets)
             window.localStorage.setItem('sharedAxisRanges', JSON.stringify(yAxisRanges))
             window.localStorage.setItem('sharedAxisLabels', JSON.stringify(yAxisLabels))
             for (const preset in this.sharedPresets) {
@@ -326,7 +335,10 @@ export default {
                 }
             }
             const newDict = {}
-            for (const [key, value] of Object.entries(dict)) {
+            const sortedPresets = Object.entries(dict).sort(([first], [second]) =>
+                first.localeCompare(second, undefined, { sensitivity: 'base' })
+            )
+            for (const [key, value] of sortedPresets) {
                 let current = newDict
                 const fields = key.trim().split('/')
                 const lastField = fields.pop()
