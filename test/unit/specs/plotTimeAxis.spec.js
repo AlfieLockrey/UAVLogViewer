@@ -37,4 +37,10 @@ describe('plot time axis', () => {
         expect(axis.tickvals).toEqual([2000, 3000, 4000, 5000, 6000, 7000, 8000])
         expect(axis.ticktext).toEqual(['0.000', '1.000', '2.000', '3.000', '4.000', '5.000', '6.000'])
     })
+
+    it('adds the selection window only when requested', () => {
+        const context = { mode: 'elapsed', elapsedOrigin: 0 }
+        expect(getPlotTimeAxis([0, 1000], context, [0.1, 0.9], false).rangeslider).toBeUndefined()
+        expect(getPlotTimeAxis([0, 1000], context, [0.1, 0.9], true).rangeslider).toEqual({})
+    })
 })

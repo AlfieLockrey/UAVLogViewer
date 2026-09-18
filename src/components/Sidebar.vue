@@ -58,6 +58,11 @@
                           <a class="check-font"> 3D View </a>
                         </label>
                         <label>
+                          <i class="fas fa-chart-line circle"></i>
+                          <input type="checkbox" v-model="state.showRangeSlider">
+                          <a class="check-font"> Selection window </a>
+                        </label>
+                        <label>
                           <i class="fa fa-compass circle"></i>
                           <input type="checkbox" v-model="state.showMagfit">
                           <a class="check-font"> Mag Fit Tool </a>

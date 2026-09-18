@@ -35,6 +35,7 @@ export const store = {
     mapLoading: false,
     mapError: null,
     plotTimeMode: 'elapsed',
+    showRangeSlider: false,
     worldTimeAvailable: false,
     worldTimeStartMs: 0,
     worldTimeZone: '',

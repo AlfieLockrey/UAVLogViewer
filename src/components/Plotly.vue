@@ -695,9 +695,11 @@ export default {
                 worldTimeZone: this.state.worldTimeZone
             }
         },
-        getTimeAxis (range, includeRangeSlider = true) {
+        getTimeAxis (range) {
             if (!this.timeAxisContext) return {}
-            return getPlotTimeAxis(range, this.timeAxisContext, this.calculateXAxisDomain(), includeRangeSlider)
+            return getPlotTimeAxis(
+                range, this.timeAxisContext, this.calculateXAxisDomain(), this.state.showRangeSlider
+            )
         },
         getDataRange (traces) {
             let start = Infinity
@@ -1335,6 +1337,9 @@ export default {
                 this.state.plotTimeMode = 'elapsed'
                 return
             }
+            this.plot()
+        },
+        'state.showRangeSlider' () {
             this.plot()
         }
     }
