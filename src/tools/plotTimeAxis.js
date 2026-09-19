@@ -50,7 +50,7 @@ export const getPlotHoverValues = (times, context) => {
 
 export const getPlotHoverTemplate = context => hasWorldTime(context)
     ? '%{customdata}<br>%{y}<extra>%{meta}</extra>'
-    : '%{customdata}<br>%{y}<extra>%{meta}</extra>'
+    : '%{customdata} s<br>%{y}<extra>%{meta}</extra>'
 
 export const getPlotTimeAxis = (range, context, domain, includeRangeSlider = true) => {
     const validRange = range && range.length === 2 &&

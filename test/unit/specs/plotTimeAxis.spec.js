@@ -19,7 +19,7 @@ describe('plot time axis', () => {
     it('uses compact elapsed seconds in trace tooltips', () => {
         const context = { mode: 'elapsed', elapsedOrigin: 2000 }
         expect([...getPlotHoverValues([2000, 3250], context)]).toEqual([0, 1.25])
-        expect(getPlotHoverTemplate(context)).toContain('%{customdata}')
+        expect(getPlotHoverTemplate(context)).toBe('%{customdata} s<br>%{y}<extra>%{meta}</extra>')
     })
 
     it('formats world time in the configured timezone', () => {
@@ -31,13 +31,13 @@ describe('plot time axis', () => {
         }
         expect(formatPlotTime(2000, context)).toBe('13:00:01')
         expect(getPlotHoverValues([2000], context)).toEqual(['13:00:01'])
-        expect(getPlotHoverTemplate(context)).toContain('%{customdata}')
+        expect(getPlotHoverTemplate(context)).toBe('%{customdata}<br>%{y}<extra>%{meta}</extra>')
     })
 
     it('falls back to elapsed values when world-time data is incomplete', () => {
         const context = { mode: 'world', elapsedOrigin: 2000, worldStart: new Date(), worldStartMs: NaN }
         expect([...getPlotHoverValues([2000, 3250], context)]).toEqual([0, 1.25])
-        expect(getPlotHoverTemplate(context)).toContain('%{customdata}')
+        expect(getPlotHoverTemplate(context)).toBe('%{customdata} s<br>%{y}<extra>%{meta}</extra>')
     })
 
     it('keeps raw milliseconds as tick values while providing formatted labels', () => {
