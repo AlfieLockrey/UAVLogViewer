@@ -147,6 +147,7 @@ import debounce from 'v-debounce'
 import ExpressionEditor from './ExpressionEditor.vue'
 import { createPortablePreset, parsePortablePreset } from '../tools/presetFormat.js'
 import { isolateTrace, setTraceVisibility } from '../tools/traceVisibility.js'
+import { formatStatisticValue } from '../tools/plotStatistics.js'
 import {
     loadSharedPresets, saveSharedPreset, selectSharedPresetDirectory, supportsSharedPresets
 } from '../tools/sharedPresets.js'
@@ -306,7 +307,7 @@ export default {
         },
         formatStatistic (index, statistic) {
             const statistics = this.state.expressionStats[index]
-            return statistics ? statistics[statistic].toFixed(2) : '\u2014'
+            return statistics ? formatStatisticValue(statistics[statistic]) : '\u2014'
         },
         async chooseSharedPresetFolder () {
             try {
@@ -472,7 +473,7 @@ li.field {
 
 li.plotsetup {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 36px 42px 62px 64px 30px 40px repeat(3, 56px);
+  grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 36px 36px 62px 36px 30px 40px repeat(3, 56px);
   align-items: center;
   gap: 3px;
   padding-left: 6px;

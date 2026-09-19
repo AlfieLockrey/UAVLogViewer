@@ -28,7 +28,7 @@ import {
     Color,
     ProviderViewModel,
     UrlTemplateImageryProvider,
-    Viewer, CesiumTerrainProvider,
+    Viewer, CesiumTerrainProvider, EllipsoidTerrainProvider,
     PointPrimitiveCollection,
     Entity,
     ScreenSpaceEventHandler,
@@ -1493,6 +1493,7 @@ export default {
                 }
             }
             let sampledPoints = allPoints
+            const hasTerrain = !(this.viewer.terrainProvider instanceof EllipsoidTerrainProvider)
             if (this.state.vehicle !== 'boat') {
                 try {
                     sampledPoints = await sampleTerrainMostDetailed(
@@ -1502,13 +1503,29 @@ export default {
                 }
             }
 
+            // With no terrain source, ellipsoid height zero can be tens of metres below the
+            // log's AMSL positions. Use the home waypoint, or the lowest positive trajectory
+            // altitude, as a local ground estimate so fences remain aligned with the flight.
+            let fallbackGround = 0
+            const home = (this.state.mission || []).find(point =>
+                point[5] === 0 && Number.isFinite(Number(point[2])) && Number(point[2]) !== 0
+            )
+            if (home) {
+                fallbackGround = Number(home[2])
+            } else {
+                const trajectoryAltitudes = (this.state.currentTrajectory || [])
+                    .map(point => Number(point[2]))
+                    .filter(height => Number.isFinite(height) && height > 0)
+                if (trajectoryAltitudes.length) fallbackGround = Math.min(...trajectoryAltitudes)
+            }
+
             let idx = 0
             for (const f of fenceItems) {
                 // Inclusion fences green, exclusion fences red.
                 const color = f.exclusion ? Color.RED : Color.LIME
                 if (f.type === 'circle') {
                     const sp = sampledPoints[idx++]
-                    const ground = sp.height || 0
+                    const ground = hasTerrain ? (sp.height || fallbackGround) : fallbackGround
                     this.fences.push(this.viewer.entities.add({
                         position: Cartesian3.fromRadians(
                             sp.longitude, sp.latitude, ground + fenceAltMax / 2),
@@ -1526,7 +1543,7 @@ export default {
                 const maximumHeights = []
                 for (let i = 0; i < f.ring.length; i++) {
                     const sp = sampledPoints[idx++]
-                    const ground = sp.height || 0
+                    const ground = hasTerrain ? (sp.height || fallbackGround) : fallbackGround
                     minimumHeights.push(ground)
                     maximumHeights.push(ground + fenceAltMax)
                     positions.push(Cartesian3.fromRadians(

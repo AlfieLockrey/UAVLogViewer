@@ -58,7 +58,6 @@
 </template>
 
 <script>
-import isOnline from 'is-online'
 import Plotly from '@/components/Plotly.vue'
 import CesiumViewer from '@/components/CesiumViewer.vue'
 import Sidebar from '@/components/Sidebar.vue'
@@ -91,10 +90,15 @@ export default {
         this.state.worldTimeAvailable = false
         this.state.worldTimeZone = ''
         this.state.plotTimeMode = 'elapsed'
-        isOnline().then(a => { this.state.isOnline = a })
+        this.updateOnlineStatus = () => { this.state.isOnline = navigator.onLine !== false }
+        this.updateOnlineStatus()
+        window.addEventListener('online', this.updateOnlineStatus)
+        window.addEventListener('offline', this.updateOnlineStatus)
     },
     beforeDestroy () {
         this.$eventHub.$off('messages')
+        window.removeEventListener('online', this.updateOnlineStatus)
+        window.removeEventListener('offline', this.updateOnlineStatus)
     },
     data () {
         return {

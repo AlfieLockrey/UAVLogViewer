@@ -12,10 +12,8 @@ export default {
 
 <style>
 
-@import url('https://fonts.googleapis.com/css?family=Nunito+Sans&display=swap');
-
  #app {
-    font-family: 'Nunito Sans', sans-serif;
+    font-family: 'Nunito Sans', 'Segoe UI', sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
  }

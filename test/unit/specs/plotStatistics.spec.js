@@ -1,10 +1,16 @@
-import { formatPlotStatistics, getPlotStatistics } from '@/tools/plotStatistics.js'
+import { formatPlotStatistics, formatStatisticValue, getPlotStatistics } from '@/tools/plotStatistics.js'
 
 describe('plot statistics', () => {
     it('uses finite values inside the active time selection', () => {
         const statistics = getPlotStatistics([0, 1000, 2000, 3000], [1, 2, NaN, 5], [500, 2500])
         expect(statistics).toEqual({ min: 2, max: 2, mean: 2 })
-        expect(formatPlotStatistics(statistics)).toBe('Min: 2.00 Max: 2.00 Mean: 2.00')
+        expect(formatPlotStatistics(statistics)).toBe('Min: 2.00000 Max: 2.00000 Mean: 2.00000')
+    })
+
+    it('formats displayed values to six significant figures', () => {
+        expect(formatStatisticValue(123.456789)).toBe('123.457')
+        expect(formatStatisticValue(0.123456789)).toBe('0.123457')
+        expect(formatStatisticValue(0.00123456789)).toBe('1.23457e-3')
     })
 
     it('returns an em dash when the selection has no finite samples', () => {

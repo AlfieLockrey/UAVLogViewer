@@ -17,6 +17,25 @@ connection is needed to install dependencies and to load the default map imagery
 not needed to upload or process a log. A Cesium ion token is not required by the current
 self-hosted-terrain configuration.
 
+## Self-contained Windows EXE
+
+Build a single executable containing the production web app and its local web server:
+
+```powershell
+npm ci
+npm run package:windows
+```
+
+Packaging requires Windows and Node.js 20.12 or newer. The finished file is
+`release\UAV Log Viewer.exe`; people using it only need a modern web browser and do not
+need Node.js or an installer. Double-clicking the EXE starts a server available only on
+the local computer and opens the viewer in the default browser. Closing the console
+window stops it.
+
+Log parsing and the user interface work offline. Online map imagery and terrain still
+need an internet connection. Shared preset folders can be selected from Plot Setup in a
+browser that supports the File System Access API, such as Chrome or Edge.
+
 ## Prebuilt Docker
 
 ```bash

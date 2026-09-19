@@ -86,6 +86,8 @@ const webpackConfig = merge(baseWebpackConfig, {
     new CopyWebpackPlugin({
       patterns: [
         { from: 'runtime-config.js', to: 'runtime-config.js' },
+        { from: 'node_modules/@fortawesome/fontawesome-free/css/all.min.css', to: 'fontawesome/css/all.min.css' },
+        { from: 'node_modules/@fortawesome/fontawesome-free/webfonts', to: 'fontawesome/webfonts' },
         {from: path.join(cesiumSource, 'Assets'), to: 'Assets'},
         {from: path.join(cesiumSource, 'Widgets'), to: 'Widgets'},
         {from: cesiumWorkers, to: 'Workers'},

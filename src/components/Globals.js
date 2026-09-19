@@ -40,6 +40,7 @@ export const store = {
     processPercentage: -1,
     mapLoading: false,
     mapError: null,
+    isOnline: true,
     plotTimeMode: 'elapsed',
     showRangeSlider: false,
     plotCount: 1,

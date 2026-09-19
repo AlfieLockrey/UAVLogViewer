@@ -21,6 +21,15 @@ export const getPlotStatistics = (xValues, yValues, range) => {
     return count === 0 ? null : { min, max, mean: sum / count }
 }
 
+export const formatStatisticValue = value => {
+    if (!Number.isFinite(value)) return '\u2014'
+    const formatted = value.toPrecision(6)
+    const mantissa = formatted.split(/[eE]/)[0]
+    const decimals = mantissa.includes('.') ? mantissa.split('.')[1].length : 0
+    return decimals > 6 ? value.toExponential(5) : formatted
+}
+
 export const formatPlotStatistics = statistics => statistics
-    ? `Min: ${statistics.min.toFixed(2)} Max: ${statistics.max.toFixed(2)} Mean: ${statistics.mean.toFixed(2)}`
+    ? `Min: ${formatStatisticValue(statistics.min)} Max: ${formatStatisticValue(statistics.max)} ` +
+        `Mean: ${formatStatisticValue(statistics.mean)}`
     : '\u2014'

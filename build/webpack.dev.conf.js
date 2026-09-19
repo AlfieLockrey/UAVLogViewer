@@ -77,6 +77,8 @@ const devWebpackConfig = merge(baseWebpackConfig, {
     // copy custom static assets
     new CopyWebpackPlugin({
       patterns: [
+        { from: 'node_modules/@fortawesome/fontawesome-free/css/all.min.css', to: 'fontawesome/css/all.min.css' },
+        { from: 'node_modules/@fortawesome/fontawesome-free/webfonts', to: 'fontawesome/webfonts' },
         { from: path.resolve(cesiumSource, cesiumWorkers), to: 'Workers' },
         { from: path.resolve(cesiumSource, 'Assets'), to: 'Assets' },
         { from: path.resolve(cesiumSource, 'Widgets'), to: 'Widgets' },

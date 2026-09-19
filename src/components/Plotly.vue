@@ -17,13 +17,12 @@ import {
     annotationSources, combineAnnotationSets, createTextMessageAnnotations
 } from '../tools/plotAnnotations.js'
 import {
-    getAxesForPanel, getLayoutYAxis, getLocalAxis, getPanelForAxis, normalisePlotCount
+    getAxesForPanel, getHorizontalAxisLayout, getLayoutYAxis, getLocalAxis, getPanelForAxis, normalisePlotCount
 } from '../tools/plotPanels.js'
 
 const Color = require('color')
 
 const timeformat = ':02,2f'
-const yAxisPositions = [0.03, 0.07, 0.11, 0.89, 0.93, 0.97]
 let annotationsEvents = []
 let annotationsModes = []
 let annotationsParams = []
@@ -145,6 +144,9 @@ export default {
         this.$eventHub.$on('plot-time-range-changed', this.onPlotTimeRangeChanged)
         this.$eventHub.$on('plot-time-range-requested', this.onPlotTimeRangeRequested)
         this.zoomInterval = null
+        this.resizeObserver = null
+        this.resizeFrame = null
+        this.lastContainerWidth = null
     },
     mounted () {
         const WIDTH_IN_PERCENT_OF_PARENT = 90
@@ -157,6 +159,19 @@ export default {
             })
 
         this.gd = d3.select(this.$refs.line).node()
+        if (typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(entries => {
+                const width = Math.round(entries[0].contentRect.width)
+                if (width === this.lastContainerWidth) return
+                this.lastContainerWidth = width
+                if (this.resizeFrame !== null) cancelAnimationFrame(this.resizeFrame)
+                this.resizeFrame = requestAnimationFrame(() => {
+                    this.resizeFrame = null
+                    this.resize()
+                })
+            })
+            this.resizeObserver.observe(this.$refs.line)
+        }
         const _this = this
         this.$nextTick(function () {
             if (this.$route.query.ranges) {
@@ -214,6 +229,8 @@ export default {
         this.$eventHub.$off('plot', this.plot)
         this.$eventHub.$off('setPresetYAxisRanges', this.setPresetYAxisRanges)
         this.$eventHub.$off('setPresetYAxisLabels', this.setPresetYAxisLabels)
+        if (this.resizeObserver) this.resizeObserver.disconnect()
+        if (this.resizeFrame !== null) cancelAnimationFrame(this.resizeFrame)
         if (this.statisticsUpdateTimer !== null) clearTimeout(this.statisticsUpdateTimer)
         clearInterval(this.interval)
     },
@@ -353,7 +370,15 @@ export default {
             return interpolatedY
         },
         resize () {
-            Promise.resolve(Plotly.Plots.resize(this.gd)).then(() => this.updateCursor())
+            if (!this.gd || this.plotInstance === null) return
+            Promise.resolve(Plotly.Plots.resize(this.gd)).then(() => {
+                const horizontal = this.getHorizontalAxisLayout()
+                const update = { 'xaxis.domain': horizontal.domain }
+                horizontal.positions.forEach((position, axis) => {
+                    update[`${getLayoutYAxis(axis)}.position`] = position
+                })
+                return Plotly.relayout(this.gd, update)
+            }).then(() => this.updateCursor())
         },
         updateCursor (time = this.cursorTime) {
             if (!this.cursor || !this.gd) return
@@ -722,10 +747,11 @@ export default {
             // }
         },
         calculateXAxisDomain () {
-            const count = normalisePlotCount(this.state.plotCount)
-            if (count === 1) return [0.12, 0.88]
-            if (count === 2) return [0.12, 0.98]
-            return [0.08, 0.98]
+            return this.getHorizontalAxisLayout().domain
+        },
+        getHorizontalAxisLayout () {
+            const width = this.$refs.line ? this.$refs.line.clientWidth : 1000
+            return getHorizontalAxisLayout(width, this.state.plotCount)
         },
         getTimeAxisContext (traces) {
             const mode = this.state.plotTimeMode === 'world' && this.state.worldTimeAvailable ? 'world' : 'elapsed'
@@ -745,7 +771,8 @@ export default {
         },
         configurePanelLayout (range) {
             const count = normalisePlotCount(this.state.plotCount)
-            const xDomain = this.calculateXAxisDomain()
+            const horizontal = this.getHorizontalAxisLayout()
+            const xDomain = horizontal.domain
             const axes = getAxesForPanel(this.panelIndex, count)
             const axisLayouts = axes.map(axis => JSON.parse(JSON.stringify(this.plotOptions[getLayoutYAxis(axis)])))
             this.plotOptions.xaxis = this.getTimeAxis(range)
@@ -767,11 +794,11 @@ export default {
                 if (localAxis === 0) {
                     yAxis.anchor = 'free'
                     delete yAxis.overlaying
-                    yAxis.position = yAxisPositions[localAxis]
+                    yAxis.position = horizontal.positions[localAxis]
                 } else {
                     yAxis.anchor = 'free'
                     yAxis.overlaying = 'y'
-                    yAxis.position = yAxisPositions[localAxis]
+                    yAxis.position = horizontal.positions[localAxis]
                 }
             })
         },
