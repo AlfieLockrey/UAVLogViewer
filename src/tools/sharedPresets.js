@@ -83,8 +83,15 @@ const getStoredDirectory = async () => {
 
 const getDirectory = async () => {
     const storedDirectory = await getStoredDirectory()
-    if (storedDirectory) return storedDirectory
-    return isPackagedWindowsApp() ? nativeDirectoryHandle() : null
+    if (!isPackagedWindowsApp()) return storedDirectory || null
+    if (storedDirectory) {
+        try {
+            if (await hasPermission(storedDirectory, 'read')) return storedDirectory
+        } catch (error) {
+            console.warn('The remembered preset folder is unavailable; using the folder beside the EXE.', error)
+        }
+    }
+    return nativeDirectoryHandle()
 }
 
 const setDirectory = async directory => {

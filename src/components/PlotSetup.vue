@@ -444,7 +444,7 @@ export default {
 /* MAIN */
 .plot-wrapper {
   min-height: 160px;
-  overflow: hidden;
+  overflow-x: auto;
   overflow-y: scroll;
 }
 
@@ -483,12 +483,13 @@ li.field {
 }
 
 li.plotsetup {
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) minmax(0, 1fr) 36px 36px 62px 36px 30px 40px repeat(3, 56px);
   align-items: center;
   gap: 3px;
   padding-left: 6px;
-  min-width: 0;
+  min-width: 520px;
 }
 
 .plotsetup-header {

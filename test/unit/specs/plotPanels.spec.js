@@ -1,6 +1,6 @@
 import {
     getAxesForPanel, getHorizontalAxisLayout, getLayoutXAxis, getLocalAxis, getPanelDomains, getPanelForAxis,
-    getTraceXAxis, normalisePlotCount
+    getPanelHorizontalAxisLayout, getTraceXAxis, normalisePlotCount
 } from '@/tools/plotPanels.js'
 
 describe('stacked plot panels', () => {
@@ -59,11 +59,30 @@ describe('stacked plot panels', () => {
         expect(noAxes.domain).toEqual([0, 1])
     })
 
-    it('compacts the local axes independently in stacked panels', () => {
+    it('can compact a supplied local axis set', () => {
         const paperWidth = 1000 - 140
         const horizontal = getHorizontalAxisLayout(1000, 2, [0, 2])
 
         expect((horizontal.positions[2] - horizontal.positions[0]) * paperWidth).toBeCloseTo(64)
         expect(horizontal.positions[1]).toBeUndefined()
+    })
+
+    it('reserves identical axis space for every graph in multi-graph mode', () => {
+        const firstPanel = getPanelHorizontalAxisLayout(1000, 3, [0, 1])
+        const secondPanel = getPanelHorizontalAxisLayout(1000, 3, [0])
+        const emptyPanel = getPanelHorizontalAxisLayout(1000, 3, [])
+
+        expect(secondPanel).toEqual(firstPanel)
+        expect(emptyPanel).toEqual(firstPanel)
+        expect(firstPanel.positions[0]).toBeDefined()
+        expect(firstPanel.positions[1]).toBeDefined()
+    })
+
+    it('still reclaims unused axis space in single-graph mode', () => {
+        const sparse = getPanelHorizontalAxisLayout(1000, 1, [0, 2])
+        const full = getPanelHorizontalAxisLayout(1000, 1, [0, 1, 2, 3, 4, 5])
+
+        expect(sparse.domain[0]).toBeLessThan(full.domain[0])
+        expect(sparse.positions[1]).toBeUndefined()
     })
 })

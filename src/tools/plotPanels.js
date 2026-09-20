@@ -56,3 +56,10 @@ export const getHorizontalAxisLayout = (containerWidth, count, activeAxes = null
     })
     return { domain, positions }
 }
+
+export const getPanelHorizontalAxisLayout = (containerWidth, count, activeAxes = []) =>
+    getHorizontalAxisLayout(
+        containerWidth,
+        count,
+        normalisePlotCount(count) > 1 ? null : activeAxes
+    )

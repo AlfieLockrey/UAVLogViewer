@@ -17,7 +17,8 @@ import {
     combineAnnotationSets, createTextMessageAnnotations
 } from '../tools/plotAnnotations.js'
 import {
-    getAxesForPanel, getHorizontalAxisLayout, getLayoutYAxis, getLocalAxis, getPanelForAxis, normalisePlotCount
+    getAxesForPanel, getLayoutYAxis, getLocalAxis, getPanelForAxis, getPanelHorizontalAxisLayout,
+    normalisePlotCount
 } from '../tools/plotPanels.js'
 
 const Color = require('color')
@@ -754,7 +755,7 @@ export default {
             const activeAxes = this.expressionTraceIndexes.map(index =>
                 getLocalAxis(this.state.expressions[index].axis, this.state.plotCount)
             )
-            return getHorizontalAxisLayout(width, this.state.plotCount, activeAxes)
+            return getPanelHorizontalAxisLayout(width, this.state.plotCount, activeAxes)
         },
         getTimeAxisContext (traces) {
             const mode = this.state.plotTimeMode === 'world' && this.state.worldTimeAvailable ? 'world' : 'elapsed'

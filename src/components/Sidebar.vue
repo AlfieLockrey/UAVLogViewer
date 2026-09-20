@@ -1,6 +1,7 @@
 <template>
 <!-- HEADER -->
-    <div class="nav-side-menu col-lg-2">
+    <div class="nav-side-menu">
+        <div class="sidebar-content">
 
         <h1 class="brand">
             <a class="github" href="https://github.com/ardupilot/uavlogviewer">
@@ -143,6 +144,8 @@
                 </div>
             </b-collapse>
         </div>
+        </div>
+        <slot name="resizer"></slot>
     </div>
 </template>
 <script>
@@ -283,14 +286,25 @@ a.centered-section {
 /* NAV SIDE MENU */
 
     .nav-side-menu {
-        overflow-x: hidden;
-        padding: 0;
+        box-sizing: border-box;
+        overflow: hidden;
+        padding: 0 16px 0 0;
         background-color: rgb(29, 36, 52);
         background: linear-gradient(0deg, rgb(20, 25, 36) 51%, rgb(37, 47, 71) 100%);
         position: fixed !important;
+        z-index: 1002;
         top: 0px;
         height: 100%;
         color: rgb(255, 255, 255);
+    }
+
+    .sidebar-content {
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
+        padding-right: 8px;
+        overflow-x: hidden;
+        overflow-y: auto;
     }
     .nav-side-menu .toggle-btn {
         display: none;
@@ -500,10 +514,13 @@ a.centered-section {
     @media only screen and (max-width: 992px) {
         .nav-side-menu {
             position: fixed;
-            width: 50%;
             height: auto;
             max-height: 100%;
             z-index: 1002;
+        }
+
+        .sidebar-content {
+            max-height: 100vh;
         }
 
         .nav-side-menu .toggle-btn {
@@ -525,62 +542,6 @@ a.centered-section {
             border-radius: 2px;
         }
 
-          main {
-            margin-top: 45px;
-        }
-
-        .col-lg-10 {
-            max-width: 100%;
-            height: 93%;
-        }
-
-        .col-md-9 {
-            max-width: 100% !important;
-        }
-    }
-
-    /* MIN */
-
-    @media only screen and (min-width: 991px) and (max-width: 1439px) {
-        .nav-side-menu {
-            max-width: 47% !important;
-        }
-
-        .col-lg-10 {
-            max-width: 53% !important;
-        }
-
-        main {
-            height: 100%;
-        }
-    }
-
-    @media only screen and (min-width: 1440px) and (max-width: 2000px) {
-        .nav-side-menu {
-        max-width: 40% !important;
-        }
-
-        main {
-            height: 100%;
-        }
-
-        .col-lg-10 {
-            max-width: 60% !important;
-        }
-    }
-
-    @media only screen and (min-width: 2000px) {
-        .nav-side-menu {
-        max-width: 32% !important;
-        }
-
-        main {
-            height: 100%;
-        }
-
-        .col-lg-10 {
-            max-width: 68% !important;
-        }
     }
 
     .filename {

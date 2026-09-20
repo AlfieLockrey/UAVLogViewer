@@ -1,5 +1,6 @@
 <template>
-    <div id='vuewrapper' style="height: 100%;">
+    <div id='vuewrapper' class="viewer-layout" :class="{ 'pane-resizing': sidebarResizing }"
+         style="height: 100%;">
         <template v-if="(state.mapLoading && !state.mapError) || state.plotLoading">
             <div id="waiting">
                 <atom-spinner
@@ -18,9 +19,21 @@
         <EkfHelperTool  @close="state.showEkfHelper = false" v-if="state.showEkfHelper"></EkfHelperTool>
         <div class="container-fluid" style="height: 100%; overflow: hidden;">
 
-            <sidebar/>
+            <sidebar :style="sidebarStyle">
+                <div slot="resizer" ref="sidebarResizer" class="sidebar-resizer"
+                     role="separator" aria-label="Resize settings pane" aria-orientation="vertical"
+                     :aria-valuemin="Math.round(sidebarAriaMinimum)"
+                     :aria-valuemax="Math.round(sidebarWidthBounds.maximum)"
+                     :aria-valuenow="Math.round(sidebarWidth)" tabindex="0"
+                     title="Drag to resize the settings pane; double-click to reset"
+                     @pointerdown="startSidebarResize" @pointermove="moveSidebarResize"
+                     @pointerup="finishSidebarResize" @pointercancel="finishSidebarResize"
+                     @keydown="resizeSidebarWithKeyboard" @dblclick="resetSidebarWidth">
+                    <span class="sidebar-resizer-grip" aria-hidden="true">⋮</span>
+                </div>
+            </sidebar>
 
-            <main class="col-md-9 ml-sm-auto col-lg-10 flex-column d-sm-flex" role="main">
+            <main class="viewer-main flex-column d-flex" :style="mainStyle" role="main">
 
                 <div class="row"
                      v-bind:class="[state.showMap ? 'plot-with-map' : 'h-100']"
@@ -77,6 +90,9 @@ import MagFitTool from '@/components/widgets/MagFitTool.vue'
 import EkfHelperTool from '@/components/widgets/EkfHelperTool.vue'
 import Vue from 'vue'
 import tzlookup from 'tz-lookup'
+import {
+    getSidebarWidth, getSidebarWidthBounds, isSidebarOverlay, parseStoredSidebarWidth, sidebarWidthStorageKey
+} from '../tools/sidebarLayout.js'
 
 export default {
     name: 'Home',
@@ -94,19 +110,129 @@ export default {
         this.updateOnlineStatus()
         window.addEventListener('online', this.updateOnlineStatus)
         window.addEventListener('offline', this.updateOnlineStatus)
+        this.onViewportResize = () => { this.viewportWidth = window.innerWidth }
+        window.addEventListener('resize', this.onViewportResize)
+        this.restoreSidebarWidth()
+        this.$eventHub.$on('reset-sidebar-width', this.resetSidebarWidth)
     },
     beforeDestroy () {
         this.$eventHub.$off('messages')
         window.removeEventListener('online', this.updateOnlineStatus)
         window.removeEventListener('offline', this.updateOnlineStatus)
+        window.removeEventListener('resize', this.onViewportResize)
+        this.$eventHub.$off('reset-sidebar-width', this.resetSidebarWidth)
+        if (this.sidebarResizeFrame !== null) cancelAnimationFrame(this.sidebarResizeFrame)
+        if (this.viewerResizeFrame !== null) cancelAnimationFrame(this.viewerResizeFrame)
     },
     data () {
         return {
             state: store,
-            dataExtractor: null
+            dataExtractor: null,
+            viewportWidth: window.innerWidth,
+            requestedSidebarWidth: null,
+            pendingSidebarWidth: null,
+            sidebarPointerId: null,
+            sidebarResizing: false,
+            sidebarResizeFrame: null,
+            viewerResizeFrame: null
         }
     },
     methods: {
+        restoreSidebarWidth () {
+            try {
+                this.requestedSidebarWidth = parseStoredSidebarWidth(
+                    window.localStorage.getItem(sidebarWidthStorageKey)
+                )
+            } catch (error) {
+                this.requestedSidebarWidth = null
+            }
+        },
+        persistSidebarWidth () {
+            if (this.requestedSidebarWidth === null) return
+            try {
+                window.localStorage.setItem(sidebarWidthStorageKey, String(this.requestedSidebarWidth))
+            } catch (error) {
+                console.warn('Unable to save pane width:', error)
+            }
+        },
+        queueSidebarWidth (clientX) {
+            this.pendingSidebarWidth = Math.max(Number(clientX) || 0, 0)
+            if (this.sidebarResizeFrame !== null) return
+            this.sidebarResizeFrame = requestAnimationFrame(() => {
+                this.sidebarResizeFrame = null
+                this.applyPendingSidebarWidth()
+            })
+        },
+        applyPendingSidebarWidth () {
+            if (this.pendingSidebarWidth === null) return
+            this.requestedSidebarWidth = this.pendingSidebarWidth
+            this.pendingSidebarWidth = null
+        },
+        startSidebarResize (event) {
+            if (event.button !== undefined && event.button !== 0) return
+            this.sidebarPointerId = event.pointerId
+            this.sidebarResizing = true
+            event.currentTarget.setPointerCapture(event.pointerId)
+            this.queueSidebarWidth(event.clientX)
+            event.preventDefault()
+        },
+        moveSidebarResize (event) {
+            if (!this.sidebarResizing || event.pointerId !== this.sidebarPointerId) return
+            this.queueSidebarWidth(event.clientX)
+            event.preventDefault()
+        },
+        finishSidebarResize (event) {
+            if (!this.sidebarResizing || event.pointerId !== this.sidebarPointerId) return
+            if (this.sidebarResizeFrame !== null) {
+                cancelAnimationFrame(this.sidebarResizeFrame)
+                this.sidebarResizeFrame = null
+            }
+            this.pendingSidebarWidth = Math.max(Number(event.clientX) || 0, 0)
+            this.applyPendingSidebarWidth()
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                event.currentTarget.releasePointerCapture(event.pointerId)
+            }
+            this.sidebarPointerId = null
+            this.sidebarResizing = false
+            this.persistSidebarWidth()
+            this.completeViewerResize()
+            event.preventDefault()
+        },
+        resizeSidebarWithKeyboard (event) {
+            if (!['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return
+            event.preventDefault()
+            if (event.key === 'Home') {
+                this.resetSidebarWidth()
+                return
+            }
+            const step = event.shiftKey ? 64 : 16
+            const direction = event.key === 'ArrowLeft' ? -1 : 1
+            const startingWidth = this.sidebarWidth
+            this.requestedSidebarWidth = Math.max(startingWidth + direction * step, 0)
+            this.persistSidebarWidth()
+            this.completeViewerResize()
+        },
+        resetSidebarWidth () {
+            this.requestedSidebarWidth = null
+            this.pendingSidebarWidth = null
+            try {
+                window.localStorage.removeItem(sidebarWidthStorageKey)
+            } catch (error) {
+                console.warn('Unable to reset pane width:', error)
+            }
+            this.completeViewerResize()
+        },
+        completeViewerResize () {
+            this.$nextTick(() => {
+                if (this.viewerResizeFrame !== null) cancelAnimationFrame(this.viewerResizeFrame)
+                this.viewerResizeFrame = requestAnimationFrame(() => {
+                    this.viewerResizeFrame = null
+                    if (this.state.plotOn) this.$eventHub.$emit('force-resize-plotly')
+                    const cesium = this.$refs.cesiumViewer
+                    if (cesium && cesium.viewer && !cesium.viewer.isDestroyed()) cesium.viewer.resize()
+                })
+            })
+        },
         extractFlightData () {
             if (this.dataExtractor === null) {
                 if (this.state.logType === 'tlog') {
@@ -302,6 +428,35 @@ export default {
         }
     },
     computed: {
+        sidebarWidthBounds () {
+            return getSidebarWidthBounds(this.viewportWidth)
+        },
+        sidebarWidth () {
+            return getSidebarWidth(this.viewportWidth, this.requestedSidebarWidth)
+        },
+        sidebarAriaMinimum () {
+            return Math.min(this.sidebarWidthBounds.minimum, this.sidebarWidth)
+        },
+        sidebarOverlay () {
+            return isSidebarOverlay(this.viewportWidth)
+        },
+        sidebarStyle () {
+            return {
+                width: `${this.sidebarWidth}px`,
+                maxWidth: 'none',
+                flexBasis: `${this.sidebarWidth}px`
+            }
+        },
+        mainStyle () {
+            if (this.sidebarOverlay) {
+                return { width: '100%', maxWidth: 'none', marginLeft: '0' }
+            }
+            return {
+                width: `calc(100% - ${this.sidebarWidth}px)`,
+                maxWidth: 'none',
+                marginLeft: `${this.sidebarWidth}px`
+            }
+        },
         mapOk () {
             return (this.state.flightModeChanges !== undefined &&
                     this.state.currentTrajectory !== undefined &&
@@ -327,6 +482,69 @@ export default {
 
 <!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
+
+    .viewer-layout {
+        overflow: hidden;
+    }
+
+    .viewer-main {
+        position: relative;
+        height: 100%;
+        min-width: 0;
+        padding: 0;
+    }
+
+    .sidebar-resizer {
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 1003;
+        width: 16px;
+        cursor: col-resize;
+        touch-action: none;
+        outline: none;
+    }
+
+    .sidebar-resizer::before {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        width: 2px;
+        background: rgba(100, 233, 255, 0.28);
+        content: '';
+    }
+
+    .sidebar-resizer:hover::before,
+    .sidebar-resizer:focus::before,
+    .pane-resizing .sidebar-resizer::before {
+        background: #64e9ff;
+    }
+
+    .sidebar-resizer-grip {
+        position: absolute;
+        top: 50%;
+        right: 1px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 14px;
+        height: 54px;
+        border: 1px solid rgba(100, 233, 255, 0.6);
+        border-radius: 7px;
+        background: rgb(29, 36, 52);
+        color: #64e9ff;
+        font-size: 22px;
+        line-height: 1;
+        transform: translateY(-50%);
+    }
+
+    .pane-resizing,
+    .pane-resizing * {
+        cursor: col-resize !important;
+        user-select: none !important;
+    }
 
     .global-token-warning {
         position: fixed;
@@ -414,6 +632,13 @@ export default {
         background-color: black;
         opacity: 0.75;
         text-align: center;
+    }
+
+    @media only screen and (max-width: 991px) {
+        .viewer-main {
+            height: 93%;
+            margin-top: 45px !important;
+        }
     }
 
     .map-error-container {
