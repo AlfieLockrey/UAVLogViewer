@@ -751,7 +751,10 @@ export default {
         },
         getHorizontalAxisLayout () {
             const width = this.$refs.line ? this.$refs.line.clientWidth : 1000
-            return getHorizontalAxisLayout(width, this.state.plotCount)
+            const activeAxes = this.expressionTraceIndexes.map(index =>
+                getLocalAxis(this.state.expressions[index].axis, this.state.plotCount)
+            )
+            return getHorizontalAxisLayout(width, this.state.plotCount, activeAxes)
         },
         getTimeAxisContext (traces) {
             const mode = this.state.plotTimeMode === 'world' && this.state.worldTimeAvailable ? 'world' : 'elapsed'
@@ -774,6 +777,9 @@ export default {
             const horizontal = this.getHorizontalAxisLayout()
             const xDomain = horizontal.domain
             const axes = getAxesForPanel(this.panelIndex, count)
+            const activeAxes = new Set(this.expressionTraceIndexes.map(index =>
+                getLocalAxis(this.state.expressions[index].axis, count)
+            ))
             const axisLayouts = axes.map(axis => JSON.parse(JSON.stringify(this.plotOptions[getLayoutYAxis(axis)])))
             this.plotOptions.xaxis = this.getTimeAxis(range)
             this.plotOptions.xaxis.domain = xDomain
@@ -787,18 +793,18 @@ export default {
             axisLayouts.forEach((yAxis, localAxis) => {
                 const key = getLayoutYAxis(localAxis)
                 this.plotOptions[key] = yAxis
-                yAxis.visible = true
+                yAxis.visible = activeAxes.has(localAxis)
                 yAxis.domain = [0, 1]
                 yAxis.side = localAxis >= 3 ? 'right' : 'left'
                 yAxis.automargin = false
                 if (localAxis === 0) {
                     yAxis.anchor = 'free'
                     delete yAxis.overlaying
-                    yAxis.position = horizontal.positions[localAxis]
+                    if (yAxis.visible) yAxis.position = horizontal.positions[localAxis]
                 } else {
                     yAxis.anchor = 'free'
                     yAxis.overlaying = 'y'
-                    yAxis.position = horizontal.positions[localAxis]
+                    if (yAxis.visible) yAxis.position = horizontal.positions[localAxis]
                 }
             })
         },

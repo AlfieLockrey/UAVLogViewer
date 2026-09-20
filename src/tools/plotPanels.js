@@ -30,25 +30,29 @@ export const getLayoutXAxis = panel => panel === 0 ? 'xaxis' : `xaxis${panel + 1
 
 export const getLayoutYAxis = axis => axis === 0 ? 'yaxis' : `yaxis${axis + 1}`
 
-export const getHorizontalAxisLayout = (containerWidth, count) => {
+export const getHorizontalAxisLayout = (containerWidth, count, activeAxes = null) => {
     const panelCount = normalisePlotCount(count)
     const axesPerPanel = 6 / panelCount
-    const leftAxisCount = Math.min(axesPerPanel, 3)
-    const rightAxisCount = Math.max(axesPerPanel - 3, 0)
+    const axes = activeAxes === null
+        ? Array.from({ length: axesPerPanel }, (_, axis) => axis)
+        : [...new Set(activeAxes)].filter(axis => Number.isInteger(axis) && axis >= 0 && axis < axesPerPanel).sort()
+    const leftAxes = axes.filter(axis => axis < 3)
+    const rightAxes = axes.filter(axis => axis >= 3)
     const paperWidth = Math.max(Number(containerWidth) - plotHorizontalMargins, 1)
-    const leftPixels = axisPlotGapPixels + (leftAxisCount - 1) * axisSpacingPixels
-    const rightPixels = rightAxisCount > 0
-        ? axisPlotGapPixels + (rightAxisCount - 1) * axisSpacingPixels
-        : axisPlotGapPixels
+    const leftPixels = leftAxes.length > 0
+        ? axisPlotGapPixels + (leftAxes.length - 1) * axisSpacingPixels
+        : 0
+    const rightPixels = rightAxes.length > 0
+        ? axisPlotGapPixels + (rightAxes.length - 1) * axisSpacingPixels
+        : 0
     const domain = [leftPixels / paperWidth, 1 - rightPixels / paperWidth]
-    const positions = []
+    const positions = new Array(axesPerPanel)
 
-    for (let axis = 0; axis < leftAxisCount; axis++) {
-        positions.push((leftPixels - axisPlotGapPixels -
-            (leftAxisCount - axis - 1) * axisSpacingPixels) / paperWidth)
-    }
-    for (let axis = 0; axis < rightAxisCount; axis++) {
-        positions.push((paperWidth - rightPixels + axisPlotGapPixels + axis * axisSpacingPixels) / paperWidth)
-    }
+    leftAxes.forEach((axis, index) => {
+        positions[axis] = index * axisSpacingPixels / paperWidth
+    })
+    rightAxes.forEach((axis, index) => {
+        positions[axis] = (paperWidth - (rightAxes.length - index - 1) * axisSpacingPixels) / paperWidth
+    })
     return { domain, positions }
 }

@@ -45,4 +45,25 @@ describe('stacked plot panels', () => {
         expect((narrow.positions[4] - narrow.positions[3]) * narrowPaperWidth).toBeCloseTo(64)
         expect(narrow.domain[0]).toBeGreaterThan(wide.domain[0])
     })
+
+    it('reserves horizontal space only for axes that are in use', () => {
+        const paperWidth = 1000 - 140
+        const allAxes = getHorizontalAxisLayout(1000, 1)
+        const sparseAxes = getHorizontalAxisLayout(1000, 1, [0, 2, 5])
+        const noAxes = getHorizontalAxisLayout(1000, 1, [])
+
+        expect(sparseAxes.domain[0]).toBeLessThan(allAxes.domain[0])
+        expect(sparseAxes.domain[1]).toBeGreaterThan(allAxes.domain[1])
+        expect((sparseAxes.positions[2] - sparseAxes.positions[0]) * paperWidth).toBeCloseTo(64)
+        expect(sparseAxes.positions[1]).toBeUndefined()
+        expect(noAxes.domain).toEqual([0, 1])
+    })
+
+    it('compacts the local axes independently in stacked panels', () => {
+        const paperWidth = 1000 - 140
+        const horizontal = getHorizontalAxisLayout(1000, 2, [0, 2])
+
+        expect((horizontal.positions[2] - horizontal.positions[0]) * paperWidth).toBeCloseTo(64)
+        expect(horizontal.positions[1]).toBeUndefined()
+    })
 })

@@ -83,8 +83,9 @@
         <button class="save-preset" @click="$refs.presetFile.click()">
           <i class="fa fa-upload" aria-hidden="true"></i>Import Preset
         </button>
-        <button class="save-preset" :title="sharedPresetSupported
-          ? 'Choose a shared preset folder' : 'Shared preset folders require Chrome or Edge on desktop'"
+        <button class="save-preset" :title="packagedWindowsApp
+          ? 'Choose a different preset folder' : sharedPresetSupported
+            ? 'Choose a shared preset folder' : 'Shared preset folders require Chrome or Edge on desktop'"
           @click="chooseSharedPresetFolder">
           <i class="fa fa-folder-open" aria-hidden="true"></i>Preset Folder
         </button>
@@ -200,6 +201,9 @@ export default {
         this.refreshAxisLimits()
     },
     computed: {
+        packagedWindowsApp () {
+            return Boolean(window.__APP_CONFIG__ && window.__APP_CONFIG__.WINDOWS_EXE)
+        },
         additionalCompletionItems () {
             const additionalCompletionItems = [
                 'mag_heading_df(MAG[0],ATT)',

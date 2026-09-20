@@ -4,6 +4,65 @@ const databaseName = 'UAVLogViewer'
 const storeName = 'settings'
 const directoryKey = 'sharedPresetDirectory'
 
+const isPackagedWindowsApp = () => Boolean(window.__APP_CONFIG__ && window.__APP_CONFIG__.WINDOWS_EXE)
+
+const nativeFileUrl = relativePath => `/api/presets/file?path=${encodeURIComponent(relativePath)}`
+
+const nativeFileHandle = relativePath => ({
+    kind: 'file',
+    name: relativePath.split('/').pop(),
+    async getFile () {
+        const response = await fetch(nativeFileUrl(relativePath), { cache: 'no-store' })
+        if (!response.ok) throw new Error(`Could not read preset file (${response.status}).`)
+        return { text: () => response.text() }
+    },
+    async createWritable () {
+        let contents = ''
+        return {
+            async write (value) { contents = value },
+            async close () {
+                const response = await fetch(nativeFileUrl(relativePath), { method: 'PUT', body: contents })
+                if (!response.ok) throw new Error(`Could not write preset file (${response.status}).`)
+            }
+        }
+    }
+})
+
+const nativeDirectoryHandle = (prefix = '') => ({
+    kind: 'directory',
+    name: prefix || (window.__APP_CONFIG__.PRESET_FOLDER_NAME || 'presets'),
+    async queryPermission () { return 'granted' },
+    async requestPermission () { return 'granted' },
+    async * values () {
+        if (prefix) return
+        const response = await fetch('/api/presets', { cache: 'no-store' })
+        if (!response.ok) throw new Error(`Could not list preset files (${response.status}).`)
+        for (const filename of await response.json()) yield nativeFileHandle(filename)
+    },
+    async getFileHandle (filename, options = {}) {
+        const relativePath = prefix ? `${prefix}/${filename}` : filename
+        if (options.create) return nativeFileHandle(relativePath)
+        const response = await fetch(nativeFileUrl(relativePath), { method: 'HEAD', cache: 'no-store' })
+        if (!response.ok) {
+            const error = new Error(`Preset file does not exist (${response.status}).`)
+            error.name = 'NotFoundError'
+            throw error
+        }
+        return nativeFileHandle(relativePath)
+    },
+    async getDirectoryHandle (name) {
+        if (prefix || name !== 'backups') throw new Error('Only the preset backup folder is available.')
+        return nativeDirectoryHandle(name)
+    },
+    async removeEntry (filename) {
+        const relativePath = prefix ? `${prefix}/${filename}` : filename
+        const response = await fetch(nativeFileUrl(relativePath), { method: 'DELETE' })
+        if (!response.ok && response.status !== 404) {
+            throw new Error(`Could not delete preset file (${response.status}).`)
+        }
+    }
+})
+
 const request = value => new Promise((resolve, reject) => {
     value.onsuccess = () => resolve(value.result)
     value.onerror = () => reject(value.error)
@@ -16,10 +75,16 @@ const openDatabase = () => new Promise((resolve, reject) => {
     database.onerror = () => reject(database.error)
 })
 
-const getDirectory = async () => {
+const getStoredDirectory = async () => {
     const database = await openDatabase()
     const transaction = database.transaction(storeName, 'readonly')
     return request(transaction.objectStore(storeName).get(directoryKey))
+}
+
+const getDirectory = async () => {
+    const storedDirectory = await getStoredDirectory()
+    if (storedDirectory) return storedDirectory
+    return isPackagedWindowsApp() ? nativeDirectoryHandle() : null
 }
 
 const setDirectory = async directory => {
@@ -65,10 +130,13 @@ const getBackupHandle = async (directory, filename) => {
     }
 }
 
-export const supportsSharedPresets = () => 'showDirectoryPicker' in window
+export const supportsSharedPresets = () => isPackagedWindowsApp() || 'showDirectoryPicker' in window
 
 export const selectSharedPresetDirectory = async () => {
-    if (!supportsSharedPresets()) throw new Error('Shared preset folders require Chrome or Edge on desktop.')
+    if (!('showDirectoryPicker' in window)) {
+        if (isPackagedWindowsApp()) return nativeDirectoryHandle()
+        throw new Error('Shared preset folders require Chrome or Edge on desktop.')
+    }
     const directory = await window.showDirectoryPicker({ mode: 'readwrite' })
     if (!await hasPermission(directory, 'readwrite')) {
         const permission = await directory.requestPermission({ mode: 'readwrite' })

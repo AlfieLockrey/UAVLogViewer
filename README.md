@@ -34,7 +34,13 @@ window stops it.
 
 Log parsing and the user interface work offline. Online map imagery and terrain still
 need an internet connection. Shared preset folders can be selected from Plot Setup in a
-browser that supports the File System Access API, such as Chrome or Edge.
+browser that supports the File System Access API, such as Chrome or Edge. The Windows
+EXE instead uses a `presets` folder beside the EXE automatically. Keeping both inside a
+OneDrive folder lets the same presets sync between computers even when each computer's
+absolute OneDrive path is different. The server normally uses
+`http://127.0.0.1:8680`, allowing a folder selected with **Preset Folder** to remain
+selected between launches on that computer. It chooses a temporary port only when 8680
+is already occupied.
 
 ## Prebuilt Docker
 
