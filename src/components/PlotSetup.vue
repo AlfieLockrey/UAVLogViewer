@@ -111,6 +111,13 @@
         Sync plot time
         <input v-model="state.syncPlotTime" type="checkbox">
       </label>
+      <div class="annotation-controls">
+        <span>Plot annotations</span>
+        <label><input v-model="state.annotationVisibility.events" type="checkbox">Events</label>
+        <label><input v-model="state.annotationVisibility.params" type="checkbox">Params</label>
+        <label><input v-model="state.annotationVisibility.msg" type="checkbox">MSG</label>
+        <label><input v-model="state.annotationVisibility.statusText" type="checkbox">STATUSTEXT</label>
+      </div>
       <li class="type axis-limits-toggle">
         <div v-b-toggle.axislimitscontent>
           <a class="section">Axis limits <i class="expand fas fa-caret-down"></i></a>
@@ -572,6 +579,27 @@ i {
   justify-content: space-between;
   margin: 8px;
   font-size: 12px;
+}
+
+.annotation-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 8px;
+  font-size: 12px;
+}
+
+.annotation-controls > span {
+  margin-right: auto;
+}
+
+.annotation-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
 }
 
 .axis-limit-row {

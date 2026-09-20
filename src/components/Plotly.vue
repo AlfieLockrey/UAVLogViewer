@@ -14,7 +14,7 @@ import { getElapsedOrigin, getPlotHoverTemplate, getPlotHoverValues, getPlotTime
 import { getPlotStatistics } from '../tools/plotStatistics.js'
 import { findSeriesFunctionCall, getSeriesAggregate } from '../tools/seriesFunctions.js'
 import {
-    annotationSources, combineAnnotationSets, createTextMessageAnnotations
+    combineAnnotationSets, createTextMessageAnnotations
 } from '../tools/plotAnnotations.js'
 import {
     getAxesForPanel, getHorizontalAxisLayout, getLayoutYAxis, getLocalAxis, getPanelForAxis, normalisePlotCount
@@ -827,33 +827,6 @@ export default {
                 modes: annotationsModes
             }
         },
-        getAnnotationMenu () {
-            return [{
-                active: -1,
-                buttons: annotationSources.map(source => ({
-                    args: [source],
-                    label: `${this.state.annotationVisibility[source] ? '[x]' : '[ ]'} ${this.annotationLabel(source)}`,
-                    method: 'skip'
-                })),
-                direction: 'right',
-                pad: { r: 10, t: 10 },
-                showactive: false,
-                type: 'buttons',
-                x: 0.1,
-                xanchor: 'left',
-                y: 1.2,
-                yanchor: 'top'
-            }]
-        },
-        annotationLabel (source) {
-            return { events: 'Events', params: 'Params', msg: 'MSG', statusText: 'STATUSTEXT' }[source]
-        },
-        onAnnotationButtonClicked (event) {
-            const source = event.button && event.button.args && event.button.args[0]
-            if (!annotationSources.includes(source)) return
-            this.state.annotationVisibility[source] = !this.state.annotationVisibility[source]
-            this.applyAnnotations()
-        },
         applyAnnotations () {
             if (!this.gd) return
             if (this.panelIndex !== 0) {
@@ -863,7 +836,7 @@ export default {
             Plotly.relayout(this.gd, {
                 annotations: combineAnnotationSets(this.getAnnotationSets(), this.state.annotationVisibility)
                     .map(annotation => ({ ...annotation, yref: 'paper', y: 0 })),
-                updatemenus: this.getAnnotationMenu()
+                updatemenus: []
             })
         },
         getDataRange (traces) {
@@ -1274,7 +1247,6 @@ export default {
             this.gd.on('plotly_hover', (data) => {
                 this.$eventHub.$emit('hoveredTime', data.points[0].x)
             })
-            this.gd.on('plotly_buttonclicked', this.onAnnotationButtonClicked)
             this.updateExpressionStats()
 
             this.addModeShapes()
@@ -1518,6 +1490,12 @@ export default {
         },
         'state.syncPlotTime' (sync) {
             if (sync) this.onPlotTimeRangeChanged({ source: -1, range: this.state.timeRange })
+        },
+        'state.annotationVisibility': {
+            deep: true,
+            handler () {
+                this.applyAnnotations()
+            }
         }
     }
 }
